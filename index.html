@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bitwarden Vault Manager — 密码管理面板</title>
-  <meta name="description" content="客户端加密的 Bitwarden 密码管理面板：智能搜索、批量操作、健康分析、去重合并" />
+  <meta name="description" content="客户端加密的 Bitwarden 密码管理面板：智能去重、批量操作、健康分析、去重合并" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -23,7 +23,7 @@
             </svg>
           </div>
           <h1>Bitwarden Vault Manager</h1>
-          <p class="subtitle">安全连接你的保险库 · 智能搜索 · 批量管理 · 健康分析</p>
+          <p class="subtitle">安全连接你的保险库 · 智能去重 · 批量管理 · 健康分析</p>
         </div>
 
         <form id="login-form" autocomplete="off">
@@ -37,7 +37,6 @@
 
           <div class="auth-mode-toggle">
             <button type="button" class="auth-tab active" data-mode="apikey">🔑 API Key（推荐）</button>
-            <button type="button" class="auth-tab" data-mode="password">🔒 密码登录</button>
             <button type="button" class="auth-tab" data-mode="credfile">🔐 加密文件</button>
           </div>
 
@@ -64,25 +63,6 @@
             </div>
           </div>
 
-          <!-- Password Mode -->
-          <div id="auth-password" class="auth-panel">
-            <div class="auth-info warn">
-              <p>⚠️ 密码登录可能触发 CAPTCHA 验证码，推荐使用 API Key 方式</p>
-            </div>
-            <div class="form-group">
-              <label for="email">邮箱</label>
-              <input type="email" id="email" placeholder="你的 Bitwarden 邮箱" autocomplete="username" />
-            </div>
-            <div class="form-group">
-              <label for="password">主密码</label>
-              <input type="password" id="password" placeholder="你的主密码" autocomplete="current-password" />
-            </div>
-            <div class="form-group" id="twofa-group" style="display:none">
-              <label for="twofa-code">两步验证码</label>
-              <input type="text" id="twofa-code" placeholder="输入验证码" autocomplete="one-time-code" />
-            </div>
-          </div>
-
           <!-- Encrypted File Mode -->
           <div id="auth-credfile" class="auth-panel">
             <div class="auth-info">
@@ -100,6 +80,7 @@
           <div id="login-status" class="login-status"></div>
 
           <button type="submit" id="login-btn" class="btn-primary">登录并分析</button>
+          <button type="button" id="demo-btn" class="btn-demo">🎮 点击进入演示页面</button>
 
           <div class="security-note">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

@@ -210,6 +210,51 @@ body {
 
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* Demo Mode Button */
+.btn-demo {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.btn-demo:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+}
+
+/* Demo Banner in Sidebar */
+.demo-banner {
+  text-align: center;
+  padding: 10px;
+  margin: 0 12px 8px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-sm);
+  color: #10b981;
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: demoPulse 2s ease-in-out infinite;
+}
+.demo-banner small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  opacity: 0.8;
+  font-size: 0.75rem;
+}
+@keyframes demoPulse {
+  0%, 100% { border-color: rgba(16, 185, 129, 0.3); }
+  50% { border-color: rgba(16, 185, 129, 0.6); }
+}
+
 .login-status {
   text-align: center;
   padding: 10px 0;

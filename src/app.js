@@ -1,8 +1,9 @@
 import { BitwardenClient } from './bitwarden-api.js';
-import { makeMasterKey, stretchKey, hashPassword, decryptSymmetricKey, decryptToString, encryptString } from './crypto.js';
+import { makeMasterKey, stretchKey, decryptSymmetricKey, decryptToString, encryptString } from './crypto.js';
 import { analyzeCiphers, buildMergeOperations } from './dedup-engine.js';
 import { searchAndFilter, QUICK_FILTERS, getFilterCounts, SORT_OPTIONS } from './search-engine.js';
 import { analyzeHealth } from './health-engine.js';
+import { generateDemoData } from './demo-data.js';
 import { saveAs } from 'file-saver';
 import './style.css';
 
@@ -23,6 +24,7 @@ let activeFilters = new Set();
 let searchQuery = '';
 let sortId = 'name-asc';
 let selectedItems = new Set();
+let isDemoMode = false;
 
 // --- DOM ---
 const $ = (sel) => document.querySelector(sel);
@@ -133,12 +135,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Network awareness — 断网提示 + 恢复自动同步
   window.addEventListener('offline', () => {
-    showToast('⚠️ 网络已断开，操作可能失败', 'warning');
+    if (!isDemoMode) showToast('⚠️ 网络已断开，操作可能失败', 'warning');
   });
   window.addEventListener('online', () => {
-    showToast('✅ 网络已恢复', 'success');
-    if (client && symmetricKey) resyncVault();
+    if (!isDemoMode) {
+      showToast('✅ 网络已恢复', 'success');
+      if (client && symmetricKey) resyncVault();
+    }
   });
+
+  // Demo mode button
+  $('#demo-btn')?.addEventListener('click', enterDemoMode);
 
   // Try to restore previous session (avoid re-login)
   await tryRestoreSession();
@@ -168,9 +175,8 @@ function setupLoginForm() {
     e.preventDefault();
     if (currentAuthMode === 'apikey') {
       await handleApiKeyLogin();
-    } else {
-      await handlePasswordLogin();
     }
+    // credfile mode is handled by its own event listener
   });
 }
 
@@ -231,73 +237,6 @@ async function handleApiKeyLogin() {
   }
 }
 
-async function handlePasswordLogin() {
-  const email = $('#email').value.trim();
-  const password = $('#password').value;
-  const serverUrl = $('#server-url').value;
-  const twoFaCode = $('#twofa-code').value.trim();
-
-  if (!email || !password) {
-    setLoginState('error', '请填写邮箱和密码');
-    return;
-  }
-
-  setLoginState('loading', '正在连接 Bitwarden...');
-
-  try {
-    client = new BitwardenClient(serverUrl);
-    setLoginState('loading', '获取加密参数...');
-    const kdfConfig = await client.prelogin(email);
-
-    setLoginState('loading', `密钥派生中 (${kdfConfig.kdfIterations} 轮)...`);
-    const masterKey = await makeMasterKey(password, email, kdfConfig);
-    const stretched = await stretchKey(masterKey);
-    const hashedPw = await hashPassword(password, masterKey);
-
-    setLoginState('loading', '登录中...');
-    const loginResult = await client.loginWithPassword(email, hashedPw, twoFaCode || null);
-
-    setLoginState('loading', '解密密钥...');
-    symmetricKey = await decryptSymmetricKey(loginResult.encryptedKey, stretched);
-
-    setLoginState('loading', '同步保险库...');
-    vaultData = await client.sync();
-
-    setLoginState('loading', '解密并分析条目...');
-    allDecryptedCiphers = await decryptAllCiphers(vaultData);
-    allDecryptedTrash = await decryptAllCiphers({ Ciphers: vaultData.Trash || [] });
-    analysisResult = analyzeCiphers(allDecryptedCiphers);
-    healthResult = analyzeHealth(allDecryptedCiphers);
-
-    folderMap = {};
-    if (vaultData.Folders) {
-      for (const f of vaultData.Folders) {
-        try {
-          folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || '(未命名)';
-        } catch {
-          folderMap[f.Id] = '(解密失败)';
-        }
-      }
-    }
-
-    // Save session for persistence
-    saveSession(serverUrl, client.accessToken, symmetricKey);
-
-    enterDashboard();
-  } catch (err) {
-    if (err.type === 'captcha_required') {
-      setLoginState('error', '需要验证码，请使用 API Key 方式登录');
-      return;
-    }
-    if (err.type === '2fa_required') {
-      setLoginState('twofa', '需要两步验证，请输入验证码');
-      return;
-    }
-    console.error('Login error:', err);
-    setLoginState('error', err.message || '登录失败');
-  }
-}
-
 function setLoginState(state, message) {
   const statusEl = $('#login-status');
   const submitBtn = $('#login-btn');
@@ -328,9 +267,57 @@ function enterDashboard() {
   setupSyncButton();
   setupLogout();
 
+  // Demo mode banner
+  if (isDemoMode) {
+    const sidebar = $('#sidebar');
+    if (sidebar && !sidebar.querySelector('.demo-banner')) {
+      const banner = document.createElement('div');
+      banner.className = 'demo-banner';
+      banner.innerHTML = '🎮 演示模式<br><small>所有操作仅在本地生效</small>';
+      sidebar.querySelector('.sidebar-header')?.after(banner);
+    }
+  }
+
   updateSidebarBadges();
   renderFolderList();
   switchView('overview');
+}
+
+/**
+ * Enter demo mode — generate fake data, skip all API calls
+ */
+function enterDemoMode() {
+  isDemoMode = true;
+  const demo = generateDemoData();
+
+  // Build demo client stub (all methods are no-ops that return instantly)
+  client = {
+    sync: async () => ({ Ciphers: demo.ciphers.map(c => c.raw), Trash: demo.trash.map(c => c.raw), Folders: demo.folders.map(f => ({ Id: f.id, Name: f.name })) }),
+    updateCipher: async () => {},
+    softDeleteBulk: async () => {},
+    permanentDeleteBulk: async () => {},
+    restoreBulk: async () => {},
+    bulkMoveCiphersToFolder: async () => {},
+    createFolder: async (name) => ({ Id: 'folder-' + Date.now(), Name: name }),
+    renameFolder: async () => {},
+    deleteFolder: async () => {},
+    createCipher: async (data) => ({ ...data, Id: 'cipher-' + Date.now() }),
+    importCiphers: async () => {},
+  };
+
+  // Set data directly (plaintext, no decryption needed)
+  allDecryptedCiphers = demo.ciphers;
+  allDecryptedTrash = demo.trash;
+  folderMap = {};
+  demo.folders.forEach(f => { folderMap[f.id] = f.name; });
+  analysisResult = analyzeCiphers(allDecryptedCiphers);
+  healthResult = analyzeHealth(allDecryptedCiphers);
+
+  // Override symmetric key with a dummy so encrypt/decrypt functions don't crash
+  // In demo mode we intercept operations before they need real crypto
+  symmetricKey = { encKey: new Uint8Array(32), macKey: new Uint8Array(32) };
+
+  enterDashboard();
 }
 
 function updateSidebarBadges() {
@@ -647,13 +634,15 @@ function showFolderNameModal(mode, folderId = null) {
     confirmBtn.textContent = '处理中...';
 
     try {
-      const encName = await encryptString(name, symmetricKey);
+      const encName = isDemoMode ? name : await encryptString(name, symmetricKey);
 
       if (mode === 'create') {
-        await client.createFolder(encName);
+        const result = await client.createFolder(encName);
+        if (isDemoMode) folderMap[result.Id] = name;
         showToast(`✅ 文件夹「${name}」已创建`, 'success');
       } else {
         await client.updateFolder(folderId, encName);
+        if (isDemoMode) folderMap[folderId] = name;
         showToast(`✅ 文件夹已重命名为「${name}」`, 'success');
       }
 
@@ -1246,6 +1235,50 @@ async function saveEditedCipher(cipher) {
   saveBtn.disabled = true;
   saveBtn.textContent = '保存中...';
 
+  // Demo mode: save plaintext directly to in-memory object
+  if (isDemoMode) {
+    try {
+      cipher.decrypted.name = $('#edit-name')?.value?.trim() || '';
+      cipher.raw.Name = cipher.decrypted.name;
+      cipher.raw.FolderId = $('#edit-folder')?.value || null;
+      cipher.decrypted.notes = $('#edit-notes')?.value || '';
+      cipher.raw.Notes = cipher.decrypted.notes;
+      cipher.raw.Reprompt = $('#edit-reprompt')?.checked ? 1 : 0;
+
+      if (cipher.type === 1) {
+        cipher.decrypted.username = $('#edit-username')?.value || '';
+        cipher.decrypted.password = $('#edit-password')?.value || '';
+        cipher.decrypted.totp = $('#edit-totp')?.value || '';
+        const login = cipher.raw.Login || cipher.raw.login || {};
+        login.Username = cipher.decrypted.username;
+        login.Password = cipher.decrypted.password;
+        login.Totp = cipher.decrypted.totp || null;
+        const uriInputs = [...document.querySelectorAll('.edit-uri')];
+        login.Uris = uriInputs.filter(i => i.value.trim()).map(i => ({ Uri: i.value.trim(), Match: null }));
+        cipher.decrypted.uri = login.Uris[0]?.Uri || '';
+      }
+
+      // Custom fields
+      const fieldRows = [...document.querySelectorAll('.custom-field-row')];
+      cipher.decrypted.fields = fieldRows.map(row => {
+        const fn = row.querySelector('.edit-field-name')?.value?.trim() || '';
+        const ft = parseInt(row.querySelector('.edit-field-type')?.value ?? row.querySelector('.edit-field-value')?.dataset?.fieldType ?? '0');
+        const fv = ft === 2 ? (row.querySelector('.edit-field-value')?.checked ? 'true' : 'false') : (row.querySelector('.edit-field-value')?.value || '');
+        return { name: fn, value: fv, type: ft };
+      });
+      cipher.raw.Fields = cipher.decrypted.fields.map(f => ({ Name: f.name, Value: f.value, Type: f.type }));
+
+      showToast('✅ 条目已保存', 'success');
+      closeDetailDrawer();
+      await resyncVault();
+    } catch (err) {
+      showToast(`❌ 保存失败: ${err.message}`, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 保存';
+    }
+    return;
+  }
+
   try {
     // Gather form values
     const name = $('#edit-name')?.value?.trim() || '';
@@ -1520,6 +1553,18 @@ async function decryptAllCiphers(syncData) {
 // RE-SYNC
 // ========================
 async function resyncVault() {
+  if (isDemoMode) {
+    // Demo mode: re-analyze from memory, no API
+    analysisResult = analyzeCiphers(allDecryptedCiphers);
+    healthResult = analyzeHealth(allDecryptedCiphers);
+    selectedItems.clear();
+    updateBatchBar();
+    updateSidebarBadges();
+    renderFolderList();
+    switchView(currentView);
+    return;
+  }
+
   vaultData = await client.sync();
   allDecryptedCiphers = await decryptAllCiphers(vaultData);
   allDecryptedTrash = await decryptAllCiphers({ Ciphers: vaultData.Trash || [] });
@@ -2493,23 +2538,35 @@ async function handleMerge(groups) {
 
             // Smart title: re-encrypt new title if needed
             if (op.titleOverride) {
-              const encTitle = await encryptString(op.titleOverride, symmetricKey);
-              op.data.Name = encTitle;
-              if (op.data.name !== undefined) op.data.name = encTitle;
+              if (isDemoMode) {
+                op.data.Name = op.titleOverride;
+                if (op.data.name !== undefined) op.data.name = op.titleOverride;
+              } else {
+                const encTitle = await encryptString(op.titleOverride, symmetricKey);
+                op.data.Name = encTitle;
+                if (op.data.name !== undefined) op.data.name = encTitle;
+              }
             }
 
             // Notes append: decrypt current → append → re-encrypt
             if (op.notesAppend) {
-              const currentEncNotes = op.data.Notes || op.data.notes || '';
-              let plain = '';
-              if (currentEncNotes) {
-                try { plain = await decryptToString(currentEncNotes, symmetricKey) || ''; }
-                catch { plain = ''; }
+              if (isDemoMode) {
+                const currentNotes = op.data.Notes || op.data.notes || '';
+                const merged = currentNotes + op.notesAppend;
+                op.data.Notes = merged;
+                if (op.data.notes !== undefined) op.data.notes = merged;
+              } else {
+                const currentEncNotes = op.data.Notes || op.data.notes || '';
+                let plain = '';
+                if (currentEncNotes) {
+                  try { plain = await decryptToString(currentEncNotes, symmetricKey) || ''; }
+                  catch { plain = ''; }
+                }
+                const merged = plain + op.notesAppend;
+                const encNotes = await encryptString(merged, symmetricKey);
+                op.data.Notes = encNotes;
+                if (op.data.notes !== undefined) op.data.notes = encNotes;
               }
-              const merged = plain + op.notesAppend;
-              const encNotes = await encryptString(merged, symmetricKey);
-              op.data.Notes = encNotes;
-              if (op.data.notes !== undefined) op.data.notes = encNotes;
             }
 
             await client.updateCipher(op.id, op.data);
