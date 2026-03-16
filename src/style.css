@@ -1221,6 +1221,81 @@ body {
   padding: 14px 18px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Section header actions (select all / deselect all) */
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-action-btn {
+  padding: 4px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.section-action-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--brand);
+}
+
+/* Single card merge button */
+.single-merge-btn {
+  padding: 5px 14px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-light));
+  color: white;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.single-merge-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px var(--brand-glow);
+}
+
+.single-merge-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.single-merge-btn.locked {
+  opacity: 0.4;
+}
+
+.single-merge-btn.merging {
+  background: linear-gradient(135deg, #f59e0b, #eab308);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.single-merge-btn.done {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .group-checkbox {

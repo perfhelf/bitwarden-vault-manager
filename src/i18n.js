@@ -116,6 +116,12 @@ const translations = {
   'dup.accounts': { zh: '个账号', en: 'accounts' },
   'dup.entries': { zh: '条', en: 'entries' },
   'dup.merge.btn': { zh: '🔀 一键合并', en: '🔀 Merge All' },
+  'dup.select.all': { zh: '☑ 全选', en: '☑ Select All' },
+  'dup.deselect.all': { zh: '☐ 反选', en: '☐ Deselect All' },
+  'dup.merge.single': { zh: '🔀 合并', en: '🔀 Merge' },
+  'dup.merge.single.ing': { zh: '合并中...', en: 'Merging...' },
+  'dup.merge.single.done': { zh: '✅ 完成', en: '✅ Done' },
+  'dup.merge.select.hint': { zh: '请先选择要处理的项目', en: 'Please select items first' },
 
   // === Orphans ===
   'orphan.empty': { zh: '✅ 没有孤立项。', en: '✅ No orphan items found.' },

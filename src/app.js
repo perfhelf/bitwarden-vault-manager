@@ -27,6 +27,7 @@ let searchQuery = '';
 let sortId = 'name-asc';
 let selectedItems = new Set();
 let isDemoMode = false;
+let isMergeLocked = false; // Lock to prevent concurrent merge operations
 
 // --- DOM ---
 const $ = (sel) => document.querySelector(sel);
@@ -465,9 +466,30 @@ function setupSearch() {
     clearTimeout(timeout);
     timeout = setTimeout(() => {
       searchQuery = input.value;
-      if (currentView === 'all') renderAllItems();
+      // Re-render whichever view is active
+      switch (currentView) {
+        case 'all': renderAllItems(); break;
+        case 'duplicates': renderDuplicatesView(); break;
+        case 'orphans': renderOrphansView(); break;
+        case 'nofolder': renderNoFolderView(); break;
+        case 'folder': renderFolderView(); break;
+        case 'trash': renderTrashView(); break;
+        case 'health': renderHealthView(); break;
+      }
     }, 200);
   });
+}
+
+/**
+ * Check if a cipher matches the current search query
+ */
+function matchesSearch(item) {
+  if (!searchQuery.trim()) return true;
+  const q = searchQuery.toLowerCase().trim();
+  const name = (item.decrypted?.name || '').toLowerCase();
+  const username = (item.decrypted?.username || '').toLowerCase();
+  const uris = (item.decrypted?.uris || []).join(' ').toLowerCase();
+  return name.includes(q) || username.includes(q) || uris.includes(q);
 }
 
 function setupKeyboardShortcuts() {
@@ -1901,13 +1923,32 @@ function renderDuplicatesView() {
   const exactGroups = groups.filter(g => g.type === 'exact');
   const sameGroups = groups.filter(g => g.type === 'same_site');
 
+  // Filter groups by search query
+  let filteredExactGroups = exactGroups;
+  let filteredSameGroups = sameGroups;
+  if (searchQuery.trim()) {
+    filteredExactGroups = exactGroups.filter(g => g.items.some(matchesSearch));
+    filteredSameGroups = sameGroups.filter(g => g.items.some(matchesSearch));
+  }
+
+  if (filteredExactGroups.length === 0 && filteredSameGroups.length === 0) {
+    container.innerHTML = searchQuery.trim()
+      ? `<div class="empty-state">🔍 ${t('dup.empty')}</div>`
+      : `<div class="empty-state">${t('dup.empty')}</div>`;
+    return;
+  }
+
   container.innerHTML = `
-    ${exactGroups.length > 0 ? `
+    ${filteredExactGroups.length > 0 ? `
       <div class="section-header">
         <span class="section-title">${t('dup.exact')} · ${exactGroups.length} ${t('dup.groups')}</span>
-        <span class="section-hint">${t('dup.exact.hint')}</span>
+        <div class="section-header-actions">
+          <button class="section-action-btn" id="dup-select-all">${t('dup.select.all')}</button>
+          <button class="section-action-btn" id="dup-deselect-all">${t('dup.deselect.all')}</button>
+          <span class="section-hint">${t('dup.exact.hint')}</span>
+        </div>
       </div>
-      ${exactGroups.map((group, gi) => {
+      ${filteredExactGroups.map((group, gi) => {
         const globalIdx = groups.indexOf(group);
         return `
         <div class="dup-group" data-group-index="${globalIdx}">
@@ -1921,6 +1962,7 @@ function renderDuplicatesView() {
               <span class="group-title">${escHtml(group.label)}</span>
               <span class="group-count">${group.items.length} ${t('dup.items')}</span>
             </label>
+            <button class="single-merge-btn" data-gi="${globalIdx}">${t('dup.merge.single')}</button>
             ${group.diffFields && group.diffFields.length > 0
               ? `<div class="diff-tags">${group.diffFields.map(d => `<span class="diff-tag">⚠️ ${escHtml(d)}</span>`).join('')}</div>`
               : ''}
@@ -1932,12 +1974,12 @@ function renderDuplicatesView() {
       }).join('')}
     ` : ''}
 
-    ${sameGroups.length > 0 ? `
+    ${filteredSameGroups.length > 0 ? `
       <div class="section-header" style="margin-top:24px">
-        <span class="section-title">${t('dup.samesite')} · ${sameGroups.length} ${t('dup.groups')}</span>
+        <span class="section-title">${t('dup.samesite')} · ${filteredSameGroups.length} ${t('dup.groups')}</span>
         <span class="section-hint">${t('dup.samesite.hint')}</span>
       </div>
-      ${sameGroups.map((group) => {
+      ${filteredSameGroups.map((group) => {
         const globalIdx = groups.indexOf(group);
         // Group items by username for visual clarity
         const byUser = groupItemsByUsername(group.items);
@@ -1989,6 +2031,25 @@ function renderDuplicatesView() {
   // Same-site checkbox listeners
   container.querySelectorAll('.site-item-cb').forEach(cb => {
     cb.addEventListener('change', updateMergeCount);
+  });
+
+  // Select All / Deselect All buttons
+  $('#dup-select-all')?.addEventListener('click', () => {
+    container.querySelectorAll('.group-select').forEach(cb => { cb.checked = true; });
+    updateMergeCount();
+  });
+  $('#dup-deselect-all')?.addEventListener('click', () => {
+    container.querySelectorAll('.group-select').forEach(cb => { cb.checked = !cb.checked; });
+    updateMergeCount();
+  });
+
+  // Single card merge buttons
+  container.querySelectorAll('.single-merge-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const gi = parseInt(btn.dataset.gi);
+      handleSingleMerge(groups, gi, btn);
+    });
   });
 
   // Click-to-edit: delegate clicks on dup items to open detail drawer
@@ -2103,7 +2164,20 @@ function renderOrphansView() {
     return;
   }
 
-  const allSelected = orphans.length > 0 && orphans.every(c => selectedItems.has(c.id));
+  // Filter orphans by search
+  let filteredOrphans = orphans;
+  if (searchQuery.trim()) {
+    filteredOrphans = orphans.filter(matchesSearch);
+  }
+
+  if (filteredOrphans.length === 0) {
+    container.innerHTML = searchQuery.trim()
+      ? `<div class="empty-state">🔍 ${t('orphan.empty')}</div>`
+      : `<div class="empty-state">${t('orphan.empty')}</div>`;
+    return;
+  }
+
+  const allSelected = filteredOrphans.length > 0 && filteredOrphans.every(c => selectedItems.has(c.id));
 
   container.innerHTML = `
     <div class="section-header">
@@ -2112,10 +2186,10 @@ function renderOrphansView() {
           <input type="checkbox" id="orphan-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        ${t('orphan.title')} · ${orphans.length} ${t('dup.items')}
+        ${t('orphan.title')} · ${filteredOrphans.length} ${t('dup.items')}
       </span>
     </div>
-    ${orphans.map(item => {
+    ${filteredOrphans.map(item => {
     const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
     const checked = selectedItems.has(item.id) ? 'checked' : '';
     return `
@@ -2143,9 +2217,9 @@ function renderOrphansView() {
     });
   });
 
-  // Select all
+  // Select all — operate on filtered set
   $('#orphan-select-all-cb')?.addEventListener('change', (e) => {
-    orphans.forEach(c => {
+    filteredOrphans.forEach(c => {
       if (e.target.checked) selectedItems.add(c.id);
       else selectedItems.delete(c.id);
     });
@@ -2170,12 +2244,20 @@ function renderNoFolderView() {
   const container = $('#view-nofolder');
   const items = allDecryptedCiphers.filter(c => !c.raw?.FolderId);
 
-  if (items.length === 0) {
-    container.innerHTML = '<div class="empty-state">✅ 所有条目都已归类到文件夹。</div>';
+  // Filter by search
+  let filteredItems = items;
+  if (searchQuery.trim()) {
+    filteredItems = items.filter(matchesSearch);
+  }
+
+  if (filteredItems.length === 0) {
+    container.innerHTML = searchQuery.trim()
+      ? '<div class="empty-state">🔍 没有匹配的条目</div>'
+      : '<div class="empty-state">✅ 所有条目都已归类到文件夹。</div>';
     return;
   }
 
-  const allSelected = items.length > 0 && items.every(c => selectedItems.has(c.id));
+  const allSelected = filteredItems.length > 0 && filteredItems.every(c => selectedItems.has(c.id));
 
   container.innerHTML = `
     <div class="section-header">
@@ -2184,10 +2266,10 @@ function renderNoFolderView() {
           <input type="checkbox" id="nofolder-select-all-cb" ${allSelected ? 'checked' : ''} />
           全选
         </label>
-        无文件夹条目 · ${items.length} 条
+        无文件夹条目 · ${filteredItems.length} 条
       </span>
     </div>
-    ${items.map(item => {
+    ${filteredItems.map(item => {
     const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
     const checked = selectedItems.has(item.id) ? 'checked' : '';
     return `
@@ -2214,9 +2296,9 @@ function renderNoFolderView() {
     });
   });
 
-  // Select all
+  // Select all — operate on filtered set
   $('#nofolder-select-all-cb')?.addEventListener('change', (e) => {
-    items.forEach(c => {
+    filteredItems.forEach(c => {
       if (e.target.checked) selectedItems.add(c.id);
       else selectedItems.delete(c.id);
     });
@@ -2246,11 +2328,25 @@ function renderHealthView() {
     return;
   }
 
+  // Filter health issues' sub-items by search query
+  let filteredIssues = health.issues;
+  if (searchQuery.trim()) {
+    filteredIssues = health.issues.map(issue => {
+      const filtered = (issue.items || []).filter(matchesSearch);
+      return filtered.length > 0 ? { ...issue, items: filtered, count: filtered.length } : null;
+    }).filter(Boolean);
+  }
+
+  if (filteredIssues.length === 0) {
+    container.innerHTML = `<div class="empty-state">🔍 ${t('health.empty')}</div>`;
+    return;
+  }
+
   container.innerHTML = `
     <div class="section-header">
       <span class="section-title">🛡️ ${t('health.title')} · ${t('health.score.label')} ${health.score}/100</span>
     </div>
-    ${health.issues.map((issue, i) => `
+    ${filteredIssues.map((issue, i) => `
       <div class="health-issue-card" data-index="${i}">
         <div class="health-card-header">
           <div class="severity-indicator ${issue.severity}"></div>
@@ -2302,7 +2398,20 @@ function renderTrashView() {
     return;
   }
 
-  const allSelected = trashItems.length > 0 && trashItems.every(c => selectedItems.has(c.id));
+  // Filter trash by search
+  let filteredTrash = trashItems;
+  if (searchQuery.trim()) {
+    filteredTrash = trashItems.filter(matchesSearch);
+  }
+
+  if (filteredTrash.length === 0) {
+    container.innerHTML = searchQuery.trim()
+      ? `<div class="empty-state">🔍 ${t('trash.empty')}</div>`
+      : `<div class="empty-state">${t('trash.empty')}</div>`;
+    return;
+  }
+
+  const allSelected = filteredTrash.length > 0 && filteredTrash.every(c => selectedItems.has(c.id));
 
   container.innerHTML = `
     <div class="section-header">
@@ -2311,7 +2420,7 @@ function renderTrashView() {
           <input type="checkbox" id="trash-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        🗑️ ${t('trash.title')} · ${trashItems.length} ${t('dup.items')}
+        🗑️ ${t('trash.title')} · ${filteredTrash.length} ${t('dup.items')}
       </span>
       <span class="section-hint">${t('trash.hint')}</span>
     </div>
@@ -2323,7 +2432,7 @@ function renderTrashView() {
         <button class="batch-btn" id="trash-cancel-btn">${t('trash.cancel')}</button>
       </div>
     </div>
-    ${trashItems.map(item => {
+    ${filteredTrash.map(item => {
       const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
       const checked = selectedItems.has(item.id) ? 'checked' : '';
       const deletedAt = item.raw?.DeletedDate ? new Date(item.raw.DeletedDate).toLocaleDateString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') : '';
@@ -2352,9 +2461,9 @@ function renderTrashView() {
     });
   });
 
-  // Select all
+  // Select all — operate on filtered set
   $('#trash-select-all-cb')?.addEventListener('change', (e) => {
-    trashItems.forEach(c => {
+    filteredTrash.forEach(c => {
       if (e.target.checked) selectedItems.add(c.id);
       else selectedItems.delete(c.id);
     });
@@ -2495,6 +2604,9 @@ function showTrashRestoreModal() {
 // MERGE
 // ========================
 async function handleMerge(groups) {
+  // Lock guard: prevent concurrent merges
+  if (isMergeLocked) return;
+
   // === Collect exact groups (radio-selected) ===
   const exactSelectedGroups = [];
   $$('.group-select:checked').forEach(cb => {
@@ -2563,7 +2675,7 @@ async function handleMerge(groups) {
 
   const allGroups = [...exactSelectedGroups, ...siteMergeGroups];
   if (allGroups.length === 0) {
-    showToast('请先选择要处理的项目', 'warning');
+    showToast(t('dup.merge.select.hint'), 'warning');
     return;
   }
 
@@ -2584,8 +2696,11 @@ async function handleMerge(groups) {
     confirmMsg,
     async () => {
       const mergeBtn = $('#merge-btn');
+      isMergeLocked = true;
       mergeBtn.disabled = true;
       mergeBtn.textContent = '合并中...';
+      // Disable all single merge buttons
+      updateMergeLockUI(true);
 
       try {
         const operations = buildMergeOperations(allGroups);
@@ -2681,10 +2796,140 @@ async function handleMerge(groups) {
         showToast(`❌ 合并失败: ${err.message}`, 'error');
         mergeBtn.textContent = '🔀 一键合并';
         mergeBtn.className = 'merge-btn';
+      } finally {
         mergeBtn.disabled = false;
+        isMergeLocked = false;
+        updateMergeLockUI(false);
       }
     }
   );
+}
+
+/**
+ * Update UI for all merge buttons based on lock state
+ */
+function updateMergeLockUI(locked) {
+  document.querySelectorAll('.single-merge-btn').forEach(btn => {
+    btn.disabled = locked;
+    if (locked) btn.classList.add('locked');
+    else btn.classList.remove('locked');
+  });
+  const mergeBtn = $('#merge-btn');
+  if (mergeBtn) mergeBtn.disabled = locked;
+}
+
+/**
+ * Handle single card merge — merge one exact group
+ */
+async function handleSingleMerge(groups, gi, btnEl) {
+  if (isMergeLocked) return;
+
+  const group = groups[gi];
+  if (!group) return;
+
+  const keepIndex = group.selectedKeepIndex || 0;
+  const mergeGroup = { ...group, keepItem: group.items[keepIndex] };
+
+  // Lock immediately
+  isMergeLocked = true;
+  updateMergeLockUI(true);
+  btnEl.disabled = true;
+  btnEl.textContent = t('dup.merge.single.ing');
+  btnEl.classList.add('merging');
+
+  try {
+    const operations = buildMergeOperations([mergeGroup]);
+
+    if (operations.errors && operations.errors.length > 0) {
+      operations.errors.forEach(e => {
+        showToast(`⚠️ ${e.groupLabel}: ${e.reason}`, 'warning');
+      });
+    }
+
+    // Execute updates
+    let updateFails = 0;
+    const failedKeepIds = new Set();
+    for (let idx = 0; idx < operations.toUpdate.length; idx++) {
+      const op = operations.toUpdate[idx];
+      try {
+        if (op.titleOverride) {
+          if (isDemoMode) {
+            op.data.Name = op.titleOverride;
+            if (op.data.name !== undefined) op.data.name = op.titleOverride;
+          } else {
+            const encTitle = await encryptString(op.titleOverride, symmetricKey);
+            op.data.Name = encTitle;
+            if (op.data.name !== undefined) op.data.name = encTitle;
+          }
+        }
+        if (op.notesAppend) {
+          if (isDemoMode) {
+            const currentNotes = op.data.Notes || op.data.notes || '';
+            const merged = currentNotes + op.notesAppend;
+            op.data.Notes = merged;
+            if (op.data.notes !== undefined) op.data.notes = merged;
+          } else {
+            const currentEncNotes = op.data.Notes || op.data.notes || '';
+            let plain = '';
+            if (currentEncNotes) {
+              try { plain = await decryptToString(currentEncNotes, symmetricKey) || ''; }
+              catch { plain = ''; }
+            }
+            const merged = plain + op.notesAppend;
+            const encNotes = await encryptString(merged, symmetricKey);
+            op.data.Notes = encNotes;
+            if (op.data.notes !== undefined) op.data.notes = encNotes;
+          }
+        }
+        await client.updateCipher(op.id, op.data);
+      } catch (err) {
+        console.error(`[SingleMerge] updateCipher ${op.id} failed:`, err);
+        updateFails++;
+        failedKeepIds.add(op.id);
+        showToast(`⚠️ 合并更新失败 (${err.message})`, 'warning');
+      }
+    }
+
+    // Execute deletes — skip failed groups
+    const failedGroupDeleteIds = new Set();
+    if (failedKeepIds.size > 0) {
+      mergeGroup.items.filter(i => i.id !== mergeGroup.keepItem.id).forEach(i => failedGroupDeleteIds.add(i.id));
+    }
+    const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
+    if (safeToDelete.length > 0) {
+      for (let i = 0; i < safeToDelete.length; i += 100) {
+        await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
+      }
+    }
+
+    if (updateFails === 0) {
+      showToast(`✅ ${escHtml(group.label)} 合并完成`, 'success');
+
+      // Optimistic UI update — remove deleted items from memory and re-render
+      const deleteSet = new Set(safeToDelete);
+      allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+      analysisResult = analyzeCiphers(allDecryptedCiphers);
+      healthResult = analyzeHealth(allDecryptedCiphers);
+      updateSidebarBadges();
+      renderFolderList();
+      switchView(currentView);
+    } else {
+      showToast(`⚠️ ${escHtml(group.label)} 合并部分失败`, 'warning');
+    }
+
+    // Background resync for real mode consistency
+    if (!isDemoMode) {
+      setTimeout(() => resyncVault(), 1500);
+    }
+  } catch (err) {
+    console.error('[SingleMerge] error:', err);
+    showToast(`❌ 合并失败: ${err.message}`, 'error');
+    btnEl.textContent = t('dup.merge.single');
+    btnEl.classList.remove('merging');
+  } finally {
+    isMergeLocked = false;
+    updateMergeLockUI(false);
+  }
 }
 
 // ========================
