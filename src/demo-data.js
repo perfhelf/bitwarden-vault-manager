@@ -4,18 +4,25 @@
  * Includes: exact duplicates, same-site duplicates, orphans, weak/empty passwords
  */
 
-const DEMO_FOLDERS = [
-  { id: 'folder-social', name: '社交媒体' },
-  { id: 'folder-finance', name: '金融理财' },
-  { id: 'folder-shopping', name: '购物网站' },
-  { id: 'folder-work', name: '工作相关' },
-  { id: 'folder-dev', name: '开发工具' },
-  { id: 'folder-gaming', name: '游戏娱乐' },
-  { id: 'folder-email', name: '邮箱' },
-  { id: 'folder-cloud', name: '云服务' },
-];
+const DEMO_FOLDERS_I18N = {
+  'folder-social': { zh: '社交媒体', en: 'Social Media' },
+  'folder-finance': { zh: '金融理财', en: 'Finance' },
+  'folder-shopping': { zh: '购物网站', en: 'Shopping' },
+  'folder-work': { zh: '工作相关', en: 'Work' },
+  'folder-dev': { zh: '开发工具', en: 'Dev Tools' },
+  'folder-gaming': { zh: '游戏娱乐', en: 'Gaming' },
+  'folder-email': { zh: '邮箱', en: 'Email' },
+  'folder-cloud': { zh: '云服务', en: 'Cloud' },
+};
 
-// Common sites for generating items
+function getDemoFolders(locale) {
+  return Object.entries(DEMO_FOLDERS_I18N).map(([id, names]) => ({
+    id,
+    name: names[locale] || names.zh,
+  }));
+}
+
+// Sites with bilingual names (Chinese-specific items have en alternatives)
 const SITES = [
   { name: 'GitHub', url: 'https://github.com', folder: 'folder-dev' },
   { name: 'GitLab', url: 'https://gitlab.com', folder: 'folder-dev' },
@@ -32,12 +39,12 @@ const SITES = [
   { name: 'DigitalOcean', url: 'https://cloud.digitalocean.com', folder: 'folder-cloud' },
   { name: 'Supabase', url: 'https://supabase.com', folder: 'folder-dev' },
   { name: 'Firebase', url: 'https://console.firebase.google.com', folder: 'folder-dev' },
-  { name: '微信', url: 'https://weixin.qq.com', folder: 'folder-social' },
-  { name: '微博', url: 'https://weibo.com', folder: 'folder-social' },
-  { name: '知乎', url: 'https://zhihu.com', folder: 'folder-social' },
-  { name: '豆瓣', url: 'https://douban.com', folder: 'folder-social' },
-  { name: '哔哩哔哩', url: 'https://bilibili.com', folder: 'folder-social' },
-  { name: '抖音', url: 'https://douyin.com', folder: 'folder-social' },
+  { zh: '微信', en: 'WeChat', url: 'https://weixin.qq.com', folder: 'folder-social' },
+  { zh: '微博', en: 'Weibo', url: 'https://weibo.com', folder: 'folder-social' },
+  { zh: '知乎', en: 'Zhihu', url: 'https://zhihu.com', folder: 'folder-social' },
+  { zh: '豆瓣', en: 'Douban', url: 'https://douban.com', folder: 'folder-social' },
+  { zh: '哔哩哔哩', en: 'Bilibili', url: 'https://bilibili.com', folder: 'folder-social' },
+  { zh: '抖音', en: 'Douyin', url: 'https://douyin.com', folder: 'folder-social' },
   { name: 'Twitter / X', url: 'https://x.com', folder: 'folder-social' },
   { name: 'Facebook', url: 'https://facebook.com', folder: 'folder-social' },
   { name: 'Instagram', url: 'https://instagram.com', folder: 'folder-social' },
@@ -52,15 +59,15 @@ const SITES = [
   { name: 'Figma', url: 'https://figma.com', folder: 'folder-work' },
   { name: 'Canva', url: 'https://canva.com', folder: 'folder-work' },
   { name: 'Zoom', url: 'https://zoom.us', folder: 'folder-work' },
-  { name: '淘宝', url: 'https://taobao.com', folder: 'folder-shopping' },
-  { name: '京东', url: 'https://jd.com', folder: 'folder-shopping' },
-  { name: '拼多多', url: 'https://pinduoduo.com', folder: 'folder-shopping' },
+  { zh: '淘宝', en: 'Taobao', url: 'https://taobao.com', folder: 'folder-shopping' },
+  { zh: '京东', en: 'JD.com', url: 'https://jd.com', folder: 'folder-shopping' },
+  { zh: '拼多多', en: 'Pinduoduo', url: 'https://pinduoduo.com', folder: 'folder-shopping' },
   { name: 'Amazon', url: 'https://amazon.com', folder: 'folder-shopping' },
   { name: 'eBay', url: 'https://ebay.com', folder: 'folder-shopping' },
   { name: 'Apple Store', url: 'https://store.apple.com', folder: 'folder-shopping' },
-  { name: '支付宝', url: 'https://alipay.com', folder: 'folder-finance' },
-  { name: '招商银行', url: 'https://cmbchina.com', folder: 'folder-finance' },
-  { name: '工商银行', url: 'https://icbc.com.cn', folder: 'folder-finance' },
+  { zh: '支付宝', en: 'Alipay', url: 'https://alipay.com', folder: 'folder-finance' },
+  { zh: '招商银行', en: 'CMB Bank', url: 'https://cmbchina.com', folder: 'folder-finance' },
+  { zh: '工商银行', en: 'ICBC Bank', url: 'https://icbc.com.cn', folder: 'folder-finance' },
   { name: 'PayPal', url: 'https://paypal.com', folder: 'folder-finance' },
   { name: 'Stripe', url: 'https://dashboard.stripe.com', folder: 'folder-finance' },
   { name: 'Coinbase', url: 'https://coinbase.com', folder: 'folder-finance' },
@@ -75,14 +82,19 @@ const SITES = [
   { name: 'YouTube', url: 'https://youtube.com', folder: 'folder-social' },
   { name: 'Gmail', url: 'https://mail.google.com', folder: 'folder-email' },
   { name: 'Outlook', url: 'https://outlook.live.com', folder: 'folder-email' },
-  { name: 'QQ邮箱', url: 'https://mail.qq.com', folder: 'folder-email' },
-  { name: '163邮箱', url: 'https://mail.163.com', folder: 'folder-email' },
+  { zh: 'QQ邮箱', en: 'QQ Mail', url: 'https://mail.qq.com', folder: 'folder-email' },
+  { zh: '163邮箱', en: '163 Mail', url: 'https://mail.163.com', folder: 'folder-email' },
   { name: 'ProtonMail', url: 'https://mail.proton.me', folder: 'folder-email' },
   { name: 'iCloud', url: 'https://icloud.com', folder: 'folder-cloud' },
   { name: 'Dropbox', url: 'https://dropbox.com', folder: 'folder-cloud' },
   { name: 'Google Drive', url: 'https://drive.google.com', folder: 'folder-cloud' },
   { name: 'OneDrive', url: 'https://onedrive.live.com', folder: 'folder-cloud' },
 ];
+
+function getSiteName(site, locale) {
+  if (site.name) return site.name;
+  return site[locale] || site.zh;
+}
 
 const EMAILS = [
   'demo@example.com',
@@ -171,7 +183,8 @@ function makeCipher({ name, url, username, password, folderId, totp, notes, fiel
   };
 }
 
-export function generateDemoData() {
+export function generateDemoData(locale = 'zh') {
+  const DEMO_FOLDERS = getDemoFolders(locale);
   const ciphers = [];
   const usedSites = [...SITES];
 
@@ -179,7 +192,7 @@ export function generateDemoData() {
   for (const site of usedSites) {
     const email = EMAILS[Math.floor(Math.random() * EMAILS.length)];
     ciphers.push(makeCipher({
-      name: site.name,
+      name: getSiteName(site, locale),
       url: site.url,
       username: email,
       password: randomPassword(),
@@ -196,7 +209,7 @@ export function generateDemoData() {
     { name: 'V2EX', url: 'https://v2ex.com' },
     { name: 'SegmentFault', url: 'https://segmentfault.com' },
     { name: 'CSDN', url: 'https://csdn.net' },
-    { name: '掘金', url: 'https://juejin.cn' },
+    { zh: '掘金', en: 'Juejin', url: 'https://juejin.cn' },
     { name: 'LeetCode', url: 'https://leetcode.com' },
     { name: 'Coursera', url: 'https://coursera.org' },
     { name: 'Udemy', url: 'https://udemy.com' },
@@ -317,11 +330,11 @@ export function generateDemoData() {
     { name: 'Gitea', url: 'https://gitea.com' },
     { name: 'Codeberg', url: 'https://codeberg.org' },
     { name: 'SourceHut', url: 'https://sr.ht' },
-    { name: '腾讯云', url: 'https://cloud.tencent.com' },
-    { name: '阿里云', url: 'https://aliyun.com' },
-    { name: '华为云', url: 'https://huaweicloud.com' },
-    { name: '七牛云', url: 'https://qiniu.com' },
-    { name: '又拍云', url: 'https://upyun.com' },
+    { zh: '腾讯云', en: 'Tencent Cloud', url: 'https://cloud.tencent.com' },
+    { zh: '阿里云', en: 'Alibaba Cloud', url: 'https://aliyun.com' },
+    { zh: '华为云', en: 'Huawei Cloud', url: 'https://huaweicloud.com' },
+    { zh: '七牛云', en: 'Qiniu Cloud', url: 'https://qiniu.com' },
+    { zh: '又拍云', en: 'Upyun CDN', url: 'https://upyun.com' },
     { name: 'Cloudflare Workers', url: 'https://workers.cloudflare.com' },
     { name: 'Cloudflare Pages', url: 'https://pages.cloudflare.com' },
     { name: 'Vercel Edge', url: 'https://vercel.com/edge' },
@@ -333,7 +346,7 @@ export function generateDemoData() {
     const email = EMAILS[Math.floor(Math.random() * EMAILS.length)];
     const folders = DEMO_FOLDERS.map(f => f.id);
     ciphers.push(makeCipher({
-      name: site.name,
+      name: getSiteName(site, locale),
       url: site.url,
       username: email,
       password: randomPassword(),
@@ -343,22 +356,23 @@ export function generateDemoData() {
 
   // === 1b) Same-site different-name duplicates (same URI, different titles, different users) ===
   const sameSiteDiffName = [
-    { names: ['GitHub 主账号', 'GitHub 工作号'], url: 'https://github.com', users: ['personal@gmail.com', 'work@company.cn'] },
-    { names: ['谷歌邮箱', 'Google Mail'], url: 'https://mail.google.com', users: ['main@gmail.com', 'backup@gmail.com'] },
-    { names: ['AWS 根账户', 'Amazon Web Services'], url: 'https://console.aws.amazon.com', users: ['root@corp.com', 'admin@corp.com'] },
-    { names: ['微博个人号', '微博营销号'], url: 'https://weibo.com', users: ['personal@163.com', 'marketing@qq.com'] },
-    { names: ['X (Twitter)', '推特小号'], url: 'https://x.com', users: ['main@email.com', 'alt@proton.me'] },
-    { names: ['淘宝购物', '天猫会员'], url: 'https://taobao.com', users: ['shopper@qq.com', 'member@163.com'] },
-    { names: ['Discord 游戏', 'Discord 开发者'], url: 'https://discord.com', users: ['gamer@email.com', 'dev@company.io'] },
-    { names: ['Slack 创业公司', 'Slack 大厂'], url: 'https://slack.com', users: ['startup@io.com', 'bigcorp@company.cn'] },
-    { names: ['LinkedIn 中文', 'LinkedIn EN'], url: 'https://linkedin.com', users: ['cn@email.com', 'en@email.com'] },
-    { names: ['Cloudflare 主站', 'CF 管理后台'], url: 'https://dash.cloudflare.com', users: ['admin@xuebz.com', 'ops@company.cn'] },
+    { names: { zh: ['GitHub 主账号', 'GitHub 工作号'], en: ['GitHub Main', 'GitHub Work'] }, url: 'https://github.com', users: ['personal@gmail.com', 'work@company.cn'] },
+    { names: { zh: ['谷歌邮箱', 'Google Mail'], en: ['Google Mail', 'Gmail Backup'] }, url: 'https://mail.google.com', users: ['main@gmail.com', 'backup@gmail.com'] },
+    { names: { zh: ['AWS 根账户', 'Amazon Web Services'], en: ['AWS Root', 'Amazon Web Services'] }, url: 'https://console.aws.amazon.com', users: ['root@corp.com', 'admin@corp.com'] },
+    { names: { zh: ['微博个人号', '微博营销号'], en: ['Weibo Personal', 'Weibo Marketing'] }, url: 'https://weibo.com', users: ['personal@163.com', 'marketing@qq.com'] },
+    { names: { zh: ['X (Twitter)', '推特小号'], en: ['X (Twitter)', 'Twitter Alt'] }, url: 'https://x.com', users: ['main@email.com', 'alt@proton.me'] },
+    { names: { zh: ['淘宝购物', '天猫会员'], en: ['Taobao Shopping', 'Tmall Member'] }, url: 'https://taobao.com', users: ['shopper@qq.com', 'member@163.com'] },
+    { names: { zh: ['Discord 游戏', 'Discord 开发者'], en: ['Discord Gaming', 'Discord Dev'] }, url: 'https://discord.com', users: ['gamer@email.com', 'dev@company.io'] },
+    { names: { zh: ['Slack 创业公司', 'Slack 大厂'], en: ['Slack Startup', 'Slack Corp'] }, url: 'https://slack.com', users: ['startup@io.com', 'bigcorp@company.cn'] },
+    { names: { zh: ['LinkedIn 中文', 'LinkedIn EN'], en: ['LinkedIn CN', 'LinkedIn EN'] }, url: 'https://linkedin.com', users: ['cn@email.com', 'en@email.com'] },
+    { names: { zh: ['Cloudflare 主站', 'CF 管理后台'], en: ['Cloudflare Main', 'CF Admin Panel'] }, url: 'https://dash.cloudflare.com', users: ['admin@xuebz.com', 'ops@company.cn'] },
   ];
 
   for (const dup of sameSiteDiffName) {
-    for (let i = 0; i < dup.names.length; i++) {
+    const names = dup.names[locale] || dup.names.zh;
+    for (let i = 0; i < names.length; i++) {
       ciphers.push(makeCipher({
-        name: dup.names[i],
+        name: names[i],
         url: dup.url,
         username: dup.users[i],
         password: randomPassword(),
@@ -370,24 +384,26 @@ export function generateDemoData() {
   // === 2) Exact duplicates (~30 items, 10 groups of 3) ===
   const exactDupSources = [
     { name: 'GitHub', nameAlt: 'Github', url: 'https://github.com', user: 'demo@example.com', pw: 'MyGitP@ss2024!' },
-    { name: '淘宝', nameAlt: 'Taobao', url: 'https://taobao.com', user: 'user123@gmail.com', pw: 'TaoBao#Shop99' },
-    { name: 'Google', nameAlt: '谷歌账号', url: 'https://accounts.google.com', user: 'frank@xuebz.com', pw: 'G00gleM@ster!' },
-    { name: 'Netflix', nameAlt: 'Netflix 家庭账号', url: 'https://netflix.com', user: 'demo@example.com', pw: 'NetFlix2024?' },
-    { name: 'Steam', nameAlt: 'Steam游戏平台', url: 'https://store.steampowered.com', user: 'gamer@gmail.com', pw: 'St3amG4mer!' },
-    { name: 'Apple ID', nameAlt: 'Apple 账户', url: 'https://appleid.apple.com', user: 'admin@company.cn', pw: 'AppleID#2024' },
-    { name: 'Dropbox', nameAlt: 'Dropbox网盘', url: 'https://dropbox.com', user: 'test.user@outlook.com', pw: 'Dr0pB0x!Safe' },
-    { name: '微信', nameAlt: 'WeChat', url: 'https://weixin.qq.com', user: 'frank@xuebz.com', pw: 'WeChat@Msg99' },
-    { name: 'Notion', nameAlt: 'Notion笔记', url: 'https://notion.so', user: 'demo@example.com', pw: 'N0tion#Note!' },
-    { name: '知乎', nameAlt: 'Zhihu', url: 'https://zhihu.com', user: 'user123@gmail.com', pw: 'ZhiHu!Ans88' },
+    { name: { zh: '淘宝', en: 'Taobao' }, nameAlt: { zh: 'Taobao', en: 'Taobao Shop' }, url: 'https://taobao.com', user: 'user123@gmail.com', pw: 'TaoBao#Shop99' },
+    { name: 'Google', nameAlt: { zh: '谷歌账号', en: 'Google Account' }, url: 'https://accounts.google.com', user: 'frank@xuebz.com', pw: 'G00gleM@ster!' },
+    { name: 'Netflix', nameAlt: { zh: 'Netflix 家庭账号', en: 'Netflix Family' }, url: 'https://netflix.com', user: 'demo@example.com', pw: 'NetFlix2024?' },
+    { name: 'Steam', nameAlt: { zh: 'Steam游戏平台', en: 'Steam Gaming' }, url: 'https://store.steampowered.com', user: 'gamer@gmail.com', pw: 'St3amG4mer!' },
+    { name: 'Apple ID', nameAlt: { zh: 'Apple 账户', en: 'Apple Account' }, url: 'https://appleid.apple.com', user: 'admin@company.cn', pw: 'AppleID#2024' },
+    { name: 'Dropbox', nameAlt: { zh: 'Dropbox网盘', en: 'Dropbox Storage' }, url: 'https://dropbox.com', user: 'test.user@outlook.com', pw: 'Dr0pB0x!Safe' },
+    { name: { zh: '微信', en: 'WeChat' }, nameAlt: 'WeChat', url: 'https://weixin.qq.com', user: 'frank@xuebz.com', pw: 'WeChat@Msg99' },
+    { name: 'Notion', nameAlt: { zh: 'Notion笔记', en: 'Notion Notes' }, url: 'https://notion.so', user: 'demo@example.com', pw: 'N0tion#Note!' },
+    { name: { zh: '知乎', en: 'Zhihu' }, nameAlt: 'Zhihu', url: 'https://zhihu.com', user: 'user123@gmail.com', pw: 'ZhiHu!Ans88' },
   ];
 
   for (const dup of exactDupSources) {
+    const dupName = typeof dup.name === 'object' ? (dup.name[locale] || dup.name.zh) : dup.name;
+    const dupAltName = typeof dup.nameAlt === 'object' ? (dup.nameAlt[locale] || dup.nameAlt.zh) : dup.nameAlt;
     // Original
-    ciphers.push(makeCipher({ name: dup.name, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
-    // Duplicate with different title (Chinese vs English)
-    ciphers.push(makeCipher({ name: dup.nameAlt, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
+    ciphers.push(makeCipher({ name: dupName, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
+    // Duplicate with different title
+    ciphers.push(makeCipher({ name: dupAltName, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
     // Third exact copy
-    ciphers.push(makeCipher({ name: dup.name, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
+    ciphers.push(makeCipher({ name: dupName, url: dup.url, username: dup.user, password: dup.pw, folderId: 'folder-social' }));
   }
 
   // === 3) Same-site duplicates (~20 items, 10 groups of 2) — same URI, different users ===
@@ -395,19 +411,20 @@ export function generateDemoData() {
     { name: 'Gmail', url: 'https://mail.google.com', users: ['personal@gmail.com', 'work@gmail.com'] },
     { name: 'GitHub', url: 'https://github.com', users: ['main-account@email.com', 'work-org@company.com'] },
     { name: 'AWS', url: 'https://console.aws.amazon.com', users: ['root@company.cn', 'iam-user@company.cn'] },
-    { name: '微博', url: 'https://weibo.com', users: ['personal@163.com', 'business@163.com'] },
+    { name: { zh: '微博', en: 'Weibo' }, url: 'https://weibo.com', users: ['personal@163.com', 'business@163.com'] },
     { name: 'Twitter / X', url: 'https://x.com', users: ['main@email.com', 'alt@email.com'] },
     { name: 'Amazon', url: 'https://amazon.com', users: ['shopping@gmail.com', 'prime@gmail.com'] },
     { name: 'Discord', url: 'https://discord.com', users: ['gamer@email.com', 'work@email.com'] },
     { name: 'Slack', url: 'https://slack.com', users: ['frank@startup.io', 'frank@bigcorp.com'] },
-    { name: '支付宝', url: 'https://alipay.com', users: ['phone1@alipay.com', 'phone2@alipay.com'] },
+    { name: { zh: '支付宝', en: 'Alipay' }, url: 'https://alipay.com', users: ['phone1@alipay.com', 'phone2@alipay.com'] },
     { name: 'LinkedIn', url: 'https://linkedin.com', users: ['cn-profile@email.com', 'en-profile@email.com'] },
   ];
 
   for (const dup of sameSiteDups) {
     for (const user of dup.users) {
+      const dupName = typeof dup.name === 'object' ? (dup.name[locale] || dup.name.zh) : dup.name;
       ciphers.push(makeCipher({
-        name: dup.name,
+        name: dupName,
         url: dup.url,
         username: user,
         password: randomPassword(),
@@ -417,7 +434,9 @@ export function generateDemoData() {
   }
 
   // === 4) Weak passwords (~5) ===
-  const weakPwSites = ['内部测试系统', '旧WiFi路由器', '临时共享账号', '1024社区', '老论坛账号'];
+  const weakPwSites = locale === 'en'
+    ? ['Internal Test System', 'Old WiFi Router', 'Temp Shared Account', 'Forum 1024', 'Old Forum Account']
+    : ['内部测试系统', '旧WiFi路由器', '临时共享账号', '1024社区', '老论坛账号'];
   for (const name of weakPwSites) {
     ciphers.push(makeCipher({
       name,
@@ -429,12 +448,14 @@ export function generateDemoData() {
   }
 
   // === 5) Empty passwords (~3, without passkeys) ===
-  ciphers.push(makeCipher({ name: '记事本-无密码', url: 'https://memo.example.com', username: 'note@user.com', password: '', folderId: 'folder-work' }));
-  ciphers.push(makeCipher({ name: '旧系统登录', url: 'https://legacy.internal.com', username: 'legacy_user', password: '', folderId: 'folder-work' }));
-  ciphers.push(makeCipher({ name: '共享WiFi', url: '', username: '', password: '', folderId: null }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Memo - No Password' : '记事本-无密码', url: 'https://memo.example.com', username: 'note@user.com', password: '', folderId: 'folder-work' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Legacy Login' : '旧系统登录', url: 'https://legacy.internal.com', username: 'legacy_user', password: '', folderId: 'folder-work' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Shared WiFi' : '共享WiFi', url: '', username: '', password: '', folderId: null }));
 
   // === 6) Stale passwords (> 1 year old) (~5) ===
-  const staleSites = ['2022年注册的论坛', '很久没用的FTP', '过期的域名面板', '旧iPhone备份密码', '大学时代的邮箱'];
+  const staleSites = locale === 'en'
+    ? ['Forum Registered 2022', 'Old FTP Server', 'Expired Domain Panel', 'Old iPhone Backup', 'College Email']
+    : ['2022年注册的论坛', '很久没用的FTP', '过期的域名面板', '旧iPhone备份密码', '大学时代的邮箱'];
   for (const name of staleSites) {
     ciphers.push(makeCipher({
       name,
@@ -448,19 +469,19 @@ export function generateDemoData() {
   }
 
   // === 7) HTTP (insecure) URIs (~3) ===
-  ciphers.push(makeCipher({ name: '本地NAS', url: 'http://192.168.1.100:5000', username: 'admin', password: randomPassword(8), folderId: 'folder-cloud' }));
-  ciphers.push(makeCipher({ name: '路由器管理', url: 'http://192.168.1.1', username: 'admin', password: 'admin123', folderId: null }));
-  ciphers.push(makeCipher({ name: '公司内网系统', url: 'http://internal.company.cn', username: 'frank', password: randomPassword(10), folderId: 'folder-work' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Local NAS' : '本地NAS', url: 'http://192.168.1.100:5000', username: 'admin', password: randomPassword(8), folderId: 'folder-cloud' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Router Admin' : '路由器管理', url: 'http://192.168.1.1', username: 'admin', password: 'admin123', folderId: null }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Company Intranet' : '公司内网系统', url: 'http://internal.company.cn', username: 'frank', password: randomPassword(10), folderId: 'folder-work' }));
 
   // === 8) Orphans (folder ID doesn't exist) (~5) ===
-  ciphers.push(makeCipher({ name: '孤立项-已删除文件夹A', url: 'https://orphan1.example.com', username: 'test@user.com', password: randomPassword(), folderId: 'folder-deleted-001' }));
-  ciphers.push(makeCipher({ name: '孤立项-旧项目B', url: 'https://orphan2.example.com', username: 'old@project.com', password: randomPassword(), folderId: 'folder-deleted-002' }));
-  ciphers.push(makeCipher({ name: '孤立项-测试C', url: 'https://orphan3.example.com', username: 'qa@team.com', password: randomPassword(), folderId: 'folder-deleted-003' }));
-  ciphers.push(makeCipher({ name: '无文件夹条目1', url: 'https://nofolder1.example.com', username: 'guest@user.com', password: randomPassword(), folderId: null }));
-  ciphers.push(makeCipher({ name: '无文件夹条目2', url: 'https://nofolder2.example.com', username: 'temp@user.com', password: randomPassword(), folderId: null }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Orphan - Deleted Folder A' : '孤立项-已删除文件夹A', url: 'https://orphan1.example.com', username: 'test@user.com', password: randomPassword(), folderId: 'folder-deleted-001' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Orphan - Old Project B' : '孤立项-旧项目B', url: 'https://orphan2.example.com', username: 'old@project.com', password: randomPassword(), folderId: 'folder-deleted-002' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Orphan - Test C' : '孤立项-测试C', url: 'https://orphan3.example.com', username: 'qa@team.com', password: randomPassword(), folderId: 'folder-deleted-003' }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Unfoldered Item 1' : '无文件夹条目1', url: 'https://nofolder1.example.com', username: 'guest@user.com', password: randomPassword(), folderId: null }));
+  ciphers.push(makeCipher({ name: locale === 'en' ? 'Unfoldered Item 2' : '无文件夹条目2', url: 'https://nofolder2.example.com', username: 'temp@user.com', password: randomPassword(), folderId: null }));
 
   // === 9) Items with TOTP (~5) ===
-  const totpSites = ['Google Authenticator测试', 'Binance', '1Password', 'Coinbase', 'AWS IAM'];
+  const totpSites = [locale === 'en' ? 'Google Auth Test' : 'Google Authenticator测试', 'Binance', '1Password', 'Coinbase', 'AWS IAM'];
   for (const name of totpSites) {
     ciphers.push(makeCipher({
       name,
@@ -474,43 +495,45 @@ export function generateDemoData() {
 
   // === 10) Items with custom fields (~5) ===
   ciphers.push(makeCipher({
-    name: 'VPN 公司账号',
+    name: locale === 'en' ? 'VPN Company' : 'VPN 公司账号',
     url: 'https://vpn.company.com',
     username: 'frank@company.cn',
     password: randomPassword(),
     folderId: 'folder-work',
     fields: [
-      { Name: '服务器地址', Value: 'vpn.company.com:8443', Type: 0 },
-      { Name: '协议', Value: 'WireGuard', Type: 0 },
-      { Name: '密钥', Value: 'wg-private-key-demo-1234567890', Type: 1 },
+      { Name: locale === 'en' ? 'Server' : '服务器地址', Value: 'vpn.company.com:8443', Type: 0 },
+      { Name: locale === 'en' ? 'Protocol' : '协议', Value: 'WireGuard', Type: 0 },
+      { Name: locale === 'en' ? 'Key' : '密钥', Value: 'wg-private-key-demo-1234567890', Type: 1 },
     ],
   }));
   ciphers.push(makeCipher({
-    name: '数据库连接',
+    name: locale === 'en' ? 'Database Connection' : '数据库连接',
     url: 'https://db.internal.com',
     username: 'postgres',
     password: randomPassword(),
     folderId: 'folder-dev',
     fields: [
-      { Name: '主机', Value: 'db.internal.com', Type: 0 },
-      { Name: '端口', Value: '5432', Type: 0 },
-      { Name: '数据库名', Value: 'production', Type: 0 },
+      { Name: locale === 'en' ? 'Host' : '主机', Value: 'db.internal.com', Type: 0 },
+      { Name: locale === 'en' ? 'Port' : '端口', Value: '5432', Type: 0 },
+      { Name: locale === 'en' ? 'Database' : '数据库名', Value: 'production', Type: 0 },
     ],
   }));
 
   // === 11) Items with notes ===
   ciphers.push(makeCipher({
-    name: '服务器 SSH',
+    name: locale === 'en' ? 'Server SSH' : '服务器 SSH',
     url: '',
     username: 'root',
     password: randomPassword(),
     folderId: 'folder-dev',
-    notes: 'IP: 123.45.67.89\n端口: 22\n注意: 只允许密钥登录\n备份密钥在 Dropbox/keys/ 目录下',
+    notes: locale === 'en'
+      ? 'IP: 123.45.67.89\nPort: 22\nNote: Key-only login\nBackup key in Dropbox/keys/'
+      : 'IP: 123.45.67.89\n端口: 22\n注意: 只允许密钥登录\n备份密钥在 Dropbox/keys/ 目录下',
   }));
 
   // === 12) Favorite items ===
   ciphers.push(makeCipher({
-    name: '⭐ 最常用-主邮箱',
+    name: locale === 'en' ? '⭐ Most Used - Main Email' : '⭐ 最常用-主邮箱',
     url: 'https://mail.google.com',
     username: 'frank@xuebz.com',
     password: randomPassword(),
@@ -520,7 +543,9 @@ export function generateDemoData() {
 
   // === 13) Password reuse (same pw across different sites) ===
   const reusedPw = 'SamePassword2024!';
-  const reuseSites = ['旧博客', '测试论坛', '临时注册的网站'];
+  const reuseSites = locale === 'en'
+    ? ['Old Blog', 'Test Forum', 'Temp Registration']
+    : ['旧博客', '测试论坛', '临时注册的网站'];
   for (const name of reuseSites) {
     ciphers.push(makeCipher({
       name,
@@ -535,7 +560,7 @@ export function generateDemoData() {
   const trashItems = [];
   for (let i = 0; i < 8; i++) {
     const item = makeCipher({
-      name: `已删除-旧账号${i + 1}`,
+      name: locale === 'en' ? `Deleted - Old ${i + 1}` : `已删除-旧账号${i + 1}`,
       url: `https://deleted${i + 1}.example.com`,
       username: `old${i}@user.com`,
       password: randomPassword(),

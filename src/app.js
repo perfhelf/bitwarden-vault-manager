@@ -4,6 +4,8 @@ import { analyzeCiphers, buildMergeOperations } from './dedup-engine.js';
 import { searchAndFilter, QUICK_FILTERS, getFilterCounts, SORT_OPTIONS } from './search-engine.js';
 import { analyzeHealth } from './health-engine.js';
 import { generateDemoData } from './demo-data.js';
+import { t, getLocale, setLocale, initLocale } from './i18n.js';
+import { getTheme, setTheme, toggleTheme, initTheme } from './theme.js';
 import { saveAs } from 'file-saver';
 import './style.css';
 
@@ -93,10 +95,10 @@ async function tryRestoreSession() {
     symmetricKey = { encKey: saved.encKey, macKey: saved.macKey };
 
     // Try syncing — if token expired, this will throw
-    setLoginState('loading', '正在恢复会话...');
+    setLoginState('loading', t('status.restoring'));
     vaultData = await client.sync();
 
-    setLoginState('loading', '解密并分析条目...');
+    setLoginState('loading', t('status.decrypt.analyze'));
     allDecryptedCiphers = await decryptAllCiphers(vaultData);
     allDecryptedTrash = await decryptAllCiphers({ Ciphers: vaultData.Trash || [] });
     analysisResult = analyzeCiphers(allDecryptedCiphers);
@@ -106,15 +108,15 @@ async function tryRestoreSession() {
     if (vaultData.Folders) {
       for (const f of vaultData.Folders) {
         try {
-          folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || '(未命名)';
+          folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || t('item.unnamed.folder');
         } catch {
-          folderMap[f.Id] = '(解密失败)';
+          folderMap[f.Id] = t('item.decrypt.fail');
         }
       }
     }
 
     enterDashboard();
-    showToast('✅ 会话已恢复', 'success');
+    showToast(t('toast.session.restored'), 'success');
     return true;
   } catch (err) {
     console.warn('[Session] Restore failed, clearing:', err.message);
@@ -128,18 +130,23 @@ async function tryRestoreSession() {
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize i18n and theme BEFORE anything else
+  initLocale();
+  initTheme();
+  updateControlButtons();
+
   setupAuthModeTabs();
   setupLoginForm();
   setupCredFileImport();
   setupKeyboardShortcuts();
 
-  // Network awareness — 断网提示 + 恢复自动同步
+  // Network awareness
   window.addEventListener('offline', () => {
-    if (!isDemoMode) showToast('⚠️ 网络已断开，操作可能失败', 'warning');
+    if (!isDemoMode) showToast(t('toast.network.lost'), 'warning');
   });
   window.addEventListener('online', () => {
     if (!isDemoMode) {
-      showToast('✅ 网络已恢复', 'success');
+      showToast(t('toast.network.back'), 'success');
       if (client && symmetricKey) resyncVault();
     }
   });
@@ -147,9 +154,72 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Demo mode button
   $('#demo-btn')?.addEventListener('click', enterDemoMode);
 
+  // Language toggle buttons (login + dashboard)
+  $('#lang-toggle-login')?.addEventListener('click', () => {
+    setLocale(getLocale() === 'zh' ? 'en' : 'zh');
+    updateControlButtons();
+  });
+  $('#lang-toggle-dash')?.addEventListener('click', () => {
+    setLocale(getLocale() === 'zh' ? 'en' : 'zh');
+    updateControlButtons();
+  });
+
+  // Theme toggle buttons (login + dashboard)
+  $('#theme-toggle-login')?.addEventListener('click', () => {
+    toggleTheme();
+    updateControlButtons();
+  });
+  $('#theme-toggle-dash')?.addEventListener('click', () => {
+    toggleTheme();
+    updateControlButtons();
+  });
+
+  // When locale changes, refresh dynamic content
+  window.addEventListener('localeChanged', () => {
+    if (isDemoMode) {
+      // Re-generate demo data in new locale
+      const demo = generateDemoData(getLocale());
+      allDecryptedCiphers = demo.ciphers;
+      allDecryptedTrash = demo.trash;
+      // Rebuild folderMap from new locale folders
+      folderMap = {};
+      demo.folders.forEach(f => { folderMap[f.id] = f.name; });
+      analysisResult = analyzeCiphers(allDecryptedCiphers);
+      healthResult = analyzeHealth(allDecryptedCiphers);
+      // Update demo banner text
+      const banner = document.querySelector('.demo-banner');
+      if (banner) {
+        banner.innerHTML = `${t('demo.banner')}<br><small>${t('demo.banner.sub')}</small>`;
+      }
+    }
+    // Refresh the current view
+    if ($('#dashboard-view').style.display !== 'none') {
+      updateSidebarBadges();
+      renderFolderList();
+      switchView(currentView);
+    }
+  });
+
   // Try to restore previous session (avoid re-login)
   await tryRestoreSession();
 });
+
+function updateControlButtons() {
+  const locale = getLocale();
+  const theme = getTheme();
+  // Language labels
+  const langText = locale === 'zh' ? 'EN' : '中';
+  const el1 = $('#lang-label-login');
+  const el2 = $('#lang-label-dash');
+  if (el1) el1.textContent = langText;
+  if (el2) el2.textContent = langText;
+  // Theme icons
+  const themeIcon = theme === 'dark' ? '☀️' : '🌙';
+  const ti1 = $('#theme-icon-login');
+  const ti2 = $('#theme-icon-dash');
+  if (ti1) ti1.textContent = themeIcon;
+  if (ti2) ti2.textContent = themeIcon;
+}
 
 // ========================
 // AUTH MODE TOGGLE
@@ -188,30 +258,30 @@ async function handleApiKeyLogin() {
   const serverUrl = $('#server-url').value;
 
   if (!clientId || !clientSecret || !email || !password) {
-    setLoginState('error', '请填写所有字段');
+    setLoginState('error', t('status.fill.all'));
     return;
   }
 
-  setLoginState('loading', '正在连接 Bitwarden...');
+  setLoginState('loading', t('status.connecting'));
 
   try {
     client = new BitwardenClient(serverUrl);
 
-    setLoginState('loading', '使用 API Key 登录...');
+    setLoginState('loading', t('status.apikey.login'));
     const loginResult = await client.loginWithApiKey(clientId, clientSecret);
 
     const kdfConfig = loginResult.kdfConfig;
-    setLoginState('loading', `本地密钥派生中 (${kdfConfig.kdfIterations} 轮)...`);
+    setLoginState('loading', `${t('status.kdf')} (${kdfConfig.kdfIterations} ${t('status.kdf.rounds')})...`);
     const masterKey = await makeMasterKey(password, email, kdfConfig);
     const stretched = await stretchKey(masterKey);
 
-    setLoginState('loading', '解密密钥...');
+    setLoginState('loading', t('status.decrypt.key'));
     symmetricKey = await decryptSymmetricKey(loginResult.encryptedKey, stretched);
 
-    setLoginState('loading', '同步保险库...');
+    setLoginState('loading', t('status.sync'));
     vaultData = await client.sync();
 
-    setLoginState('loading', '解密并分析条目...');
+    setLoginState('loading', t('status.decrypt.analyze'));
     allDecryptedCiphers = await decryptAllCiphers(vaultData);
     analysisResult = analyzeCiphers(allDecryptedCiphers);
     healthResult = analyzeHealth(allDecryptedCiphers);
@@ -220,9 +290,9 @@ async function handleApiKeyLogin() {
     if (vaultData.Folders) {
       for (const f of vaultData.Folders) {
         try {
-          folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || '(未命名)';
+          folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || t('item.unnamed.folder');
         } catch {
-          folderMap[f.Id] = '(解密失败)';
+          folderMap[f.Id] = t('item.decrypt.fail');
         }
       }
     }
@@ -233,7 +303,7 @@ async function handleApiKeyLogin() {
     enterDashboard();
   } catch (err) {
     console.error('API Key login error:', err);
-    setLoginState('error', err.message || 'API Key 登录失败');
+    setLoginState('error', err.message || t('status.login.fail'));
   }
 }
 
@@ -244,10 +314,10 @@ function setLoginState(state, message) {
   statusEl.className = `login-status ${state}`;
   if (state === 'loading') {
     submitBtn.disabled = true;
-    submitBtn.textContent = '处理中...';
+    submitBtn.textContent = t('modal.processing');
   } else {
     submitBtn.disabled = false;
-    submitBtn.textContent = '登录并分析';
+    submitBtn.textContent = t('login.btn');
   }
 }
 
@@ -273,7 +343,7 @@ function enterDashboard() {
     if (sidebar && !sidebar.querySelector('.demo-banner')) {
       const banner = document.createElement('div');
       banner.className = 'demo-banner';
-      banner.innerHTML = '🎮 演示模式<br><small>所有操作仅在本地生效</small>';
+      banner.innerHTML = `${t('demo.banner')}<br><small>${t('demo.banner.sub')}</small>`;
       sidebar.querySelector('.sidebar-header')?.after(banner);
     }
   }
@@ -288,7 +358,7 @@ function enterDashboard() {
  */
 function enterDemoMode() {
   isDemoMode = true;
-  const demo = generateDemoData();
+  const demo = generateDemoData(getLocale());
 
   // Build demo client stub (all methods are no-ops that return instantly)
   client = {
@@ -469,8 +539,8 @@ function setupBatchOps() {
   $('#batch-delete-btn').addEventListener('click', () => {
     if (selectedItems.size === 0) return;
     showConfirm(
-      '批量删除',
-      `确定要删除 ${selectedItems.size} 个条目吗？\n条目将移入回收站，30天内可恢复。`,
+      t('batch.delete.title'),
+      `${t('modal.confirm')} ${selectedItems.size} ${t('batch.delete.msg')}`,
       async () => {
         try {
           const ids = Array.from(selectedItems);
@@ -485,7 +555,7 @@ function setupBatchOps() {
           updateSidebarBadges();
           switchView(currentView);
 
-          showToast(`✅ 已删除 ${ids.length} 个条目`, 'success');
+          showToast(`✅ ${ids.length} ${t('dup.items')} ${t('detail.delete.trash')}`, 'success');
 
           // Server-side delete (background)
           for (let i = 0; i < ids.length; i += 100) {
@@ -495,7 +565,7 @@ function setupBatchOps() {
           // Background resync to ensure consistency
           resyncVault();
         } catch (err) {
-          showToast(`❌ 删除失败: ${err.message}`, 'error');
+          showToast(`❌ ${t('detail.delete.fail')}: ${err.message}`, 'error');
           // Rollback: re-sync from server
           resyncVault();
         }
@@ -514,7 +584,7 @@ function updateBatchBar() {
   const bar = $('#batch-bar');
   if (selectedItems.size > 0) {
     bar.style.display = 'flex';
-    $('#batch-count').textContent = `☑ 已选 ${selectedItems.size} 项`;
+    $('#batch-count').textContent = `☑ ${selectedItems.size} ${t('batch.selected')}`;
   } else {
     bar.style.display = 'none';
   }
@@ -542,7 +612,7 @@ function renderFolderList() {
 
   const container = $('#folder-list');
   if (folderList.length === 0) {
-    container.innerHTML = '<div class="folder-empty">暂无文件夹</div>';
+    container.innerHTML = `<div class="folder-empty">${t('folder.empty')}</div>`;
     return;
   }
 
@@ -558,8 +628,8 @@ function renderFolderList() {
       <span class="folder-name">${escHtml(f.name)}</span>
       <span class="folder-count">${folderCounts[f.id] || 0}</span>
       <div class="folder-actions">
-        <button class="folder-action-btn rename" data-folder-id="${f.id}" title="重命名">✏️</button>
-        <button class="folder-action-btn delete" data-folder-id="${f.id}" title="删除">🗑️</button>
+        <button class="folder-action-btn rename" data-folder-id="${f.id}" title="${t('folder.rename')}">✏️</button>
+        <button class="folder-action-btn delete" data-folder-id="${f.id}" title="${t('folder.delete')}">🗑️</button>
       </div>
     </div>
   `).join('');
@@ -589,19 +659,19 @@ function renderFolderList() {
       const folderName = folderMap[folderId] || '';
       const count = folderCounts[folderId] || 0;
       showConfirm(
-        '删除文件夹',
-        `确定删除文件夹「${folderName}」吗？\n文件夹内的 ${count} 个条目不会被删除，仅取消归类。`,
+        t('folder.delete.title'),
+        `${t('folder.delete.msg1')}${folderName}${t('folder.delete.msg2')}${count}${t('folder.delete.msg3')}`,
         async () => {
           try {
             await client.deleteFolder(folderId);
-            showToast(`✅ 文件夹「${folderName}」已删除`, 'success');
+            showToast(`✅ ${folderName} ${t('folder.deleted.ok')}`, 'success');
             if (selectedFolderId === folderId) {
               selectedFolderId = null;
               switchView('all');
             }
             await resyncVault();
           } catch (err) {
-            showToast(`❌ 删除失败: ${err.message}`, 'error');
+            showToast(`❌ ${t('toast.op.fail')}: ${err.message}`, 'error');
           }
         }
       );
@@ -616,10 +686,10 @@ function showFolderNameModal(mode, folderId = null) {
   const confirmBtn = $('#folder-modal-confirm');
 
   if (mode === 'create') {
-    title.textContent = '新建文件夹';
+    title.textContent = t('folder.new');
     input.value = '';
   } else {
-    title.textContent = '重命名文件夹';
+    title.textContent = t('folder.rename.title');
     input.value = folderMap[folderId] || '';
   }
 
@@ -628,10 +698,10 @@ function showFolderNameModal(mode, folderId = null) {
 
   const handleConfirm = async () => {
     const name = input.value.trim();
-    if (!name) { showToast('请输入文件夹名称', 'error'); return; }
+    if (!name) { showToast(t('folder.name.required'), 'error'); return; }
 
     confirmBtn.disabled = true;
-    confirmBtn.textContent = '处理中...';
+    confirmBtn.textContent = t('modal.processing');
 
     try {
       const encName = isDemoMode ? name : await encryptString(name, symmetricKey);
@@ -639,20 +709,20 @@ function showFolderNameModal(mode, folderId = null) {
       if (mode === 'create') {
         const result = await client.createFolder(encName);
         if (isDemoMode) folderMap[result.Id] = name;
-        showToast(`✅ 文件夹「${name}」已创建`, 'success');
+        showToast(`✅ ${name} ${t('folder.created.ok')}`, 'success');
       } else {
         await client.updateFolder(folderId, encName);
         if (isDemoMode) folderMap[folderId] = name;
-        showToast(`✅ 文件夹已重命名为「${name}」`, 'success');
+        showToast(`✅ ${t('folder.renamed.ok')} ${name}`, 'success');
       }
 
       closeFolderModal();
       await resyncVault();
     } catch (err) {
-      showToast(`❌ 操作失败: ${err.message}`, 'error');
+      showToast(`❌ ${t('toast.op.fail')}: ${err.message}`, 'error');
     } finally {
       confirmBtn.disabled = false;
-      confirmBtn.textContent = '确认';
+      confirmBtn.textContent = t('modal.confirm');
     }
   };
 
@@ -670,7 +740,7 @@ function showMoveFolderModal() {
 
   list.innerHTML = `
     <button class="move-folder-option" data-folder-id="__none__">
-      <span>📂</span> <span>无文件夹（取消归类）</span>
+      <span>📂</span> <span>${t('folder.none')}</span>
     </button>
     ${folderList.map(f => `
       <button class="move-folder-option" data-folder-id="${f.id}">
@@ -685,7 +755,7 @@ function showMoveFolderModal() {
     btn.addEventListener('click', async () => {
       const targetFolderId = btn.dataset.folderId;
       const realFolderId = targetFolderId === '__none__' ? null : targetFolderId;
-      const folderName = realFolderId ? folderMap[realFolderId] : '无文件夹';
+      const folderName = realFolderId ? folderMap[realFolderId] : t('item.no.folder');
 
       modal.style.display = 'none';
       try {
@@ -706,14 +776,14 @@ function showMoveFolderModal() {
         renderFolderList();
         switchView(currentView);
 
-        showToast(`✅ 已将 ${ids.length} 个条目移动到「${folderName}」`, 'success');
+        showToast(`✅ ${ids.length} ${t('dup.items')} ${t('folder.move.ok')} ${folderName}`, 'success');
 
         // Server-side move (background)
         await client.bulkMoveCiphersToFolder(ids, realFolderId);
         // Background resync
         resyncVault();
       } catch (err) {
-        showToast(`❌ 移动失败: ${err.message}`, 'error');
+        showToast(`❌ ${t('toast.op.fail')}: ${err.message}`, 'error');
         resyncVault();
       }
     });
@@ -726,11 +796,11 @@ function showMoveFolderModal() {
 function renderFolderView() {
   const container = $('#view-folder');
   if (!selectedFolderId) {
-    container.innerHTML = '<div class="empty-state">请从左侧选择一个文件夹</div>';
+    container.innerHTML = `<div class="empty-state">${t('folder.select')}</div>`;
     return;
   }
 
-  const folderName = folderMap[selectedFolderId] || '未知文件夹';
+  const folderName = folderMap[selectedFolderId] || t('folder.unknown');
   let items = allDecryptedCiphers.filter(c => c.raw?.FolderId === selectedFolderId);
 
   // Apply search and filters to folder items
@@ -749,11 +819,11 @@ function renderFolderView() {
   container.innerHTML = `
     <div class="section-header">
       <span class="section-title">📁 ${escHtml(folderName)}</span>
-      <span class="results-count">${items.length} 条目</span>
+      <span class="results-count">${items.length} ${t('item.items')}</span>
     </div>
     <div class="section-header">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;color:var(--text-secondary)">
-        <input type="checkbox" id="folder-select-all-cb" class="item-checkbox" /> 全选
+        <input type="checkbox" id="folder-select-all-cb" class="item-checkbox" /> ${t('item.selectall')}
       </label>
     </div>
     ${items.map(c => `
@@ -761,7 +831,7 @@ function renderFolderView() {
         <input type="checkbox" class="item-checkbox item-select-cb" data-id="${c.id}" ${selectedItems.has(c.id) ? 'checked' : ''}/>
         <div class="item-type-icon">${typeIcons[c.type] || '📄'}</div>
         <div class="item-info">
-          <div class="item-name">${escHtml(c.decrypted?.name || '(无标题)')}</div>
+          <div class="item-name">${escHtml(c.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
             ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${escHtml(c.decrypted.uris[0])}</span>` : ''}
@@ -772,7 +842,7 @@ function renderFolderView() {
           ${c.decrypted?.totp ? '<span class="mini-tag totp">🕐</span>' : ''}
         </div>
       </div>
-    `).join('') || '<div class="empty-state">这个文件夹是空的</div>'}
+    `).join('') || `<div class="empty-state">${t('folder.view.empty')}</div>`}
   `;
 
   // Event delegation for clicks
@@ -823,32 +893,32 @@ function openDetailDrawer(cipher) {
   const overlay = $('#detail-overlay');
   overlay.style.display = 'block';
 
-  $('#detail-title').textContent = cipher.decrypted?.name || '(无标题)';
+  $('#detail-title').textContent = cipher.decrypted?.name || t('item.untitled');
 
   const body = $('#detail-body');
-  const typeLabels = { 1: '🔐 登录', 2: '📝 安全笔记', 3: '💳 卡片', 4: '🪪 身份' };
+  const typeLabels = { 1: t('detail.type.login'), 2: t('detail.type.note'), 3: t('detail.type.card'), 4: t('detail.type.identity') };
   const d = cipher.decrypted;
 
   let html = '';
 
   // ── Section: Item Info ──
   html += `<div class="detail-section">
-    <div class="detail-section-title">项目信息</div>
-    ${detailField('类型', typeLabels[cipher.type] || '未知', false)}
-    ${detailField('文件夹', folderMap[cipher.raw?.FolderId] || '无文件夹', false)}
-    ${d.favorite ? '<div class="detail-field"><div class="detail-label">收藏</div><div class="detail-value">⭐ 已收藏</div></div>' : ''}
-    ${d.organizationId ? detailField('组织', d.organizationId, false) : ''}
+    <div class="detail-section-title">${t('detail.section.info')}</div>
+    ${detailField(t('detail.type'), typeLabels[cipher.type] || t('detail.type.unknown'), false)}
+    ${detailField(t('detail.folder'), folderMap[cipher.raw?.FolderId] || t('item.no.folder'), false)}
+    ${d.favorite ? `<div class="detail-field"><div class="detail-label">${t('detail.favorite')}</div><div class="detail-value">${t('detail.favorited')}</div></div>` : ''}
+    ${d.organizationId ? detailField(t('detail.org'), d.organizationId, false) : ''}
   </div>`;
 
   // ── Section: Login Credentials ──
   if (cipher.type === 1) {
-    html += '<div class="detail-section"><div class="detail-section-title">登录凭据</div>';
-    if (d.username) html += detailField('用户名', d.username, true);
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.login')}</div>`;
+    if (d.username) html += detailField(t('detail.username'), d.username, true);
 
     const pw = d.password || '';
     if (pw) {
       html += `<div class="detail-field">
-        <div class="detail-label">密码</div>
+        <div class="detail-label">${t('detail.password')}</div>
         <div class="detail-value">
           <span class="detail-pw" id="pw-display">${'•'.repeat(Math.min(pw.length, 20))}</span>
           <button class="pw-toggle" onclick="togglePw(this, '${escAttr(pw)}')">👁</button>
@@ -859,7 +929,7 @@ function openDetailDrawer(cipher) {
 
     if (d.totp) {
       html += `<div class="detail-field">
-        <div class="detail-label">验证器密钥 (TOTP)</div>
+        <div class="detail-label">${t('detail.totp.key')}</div>
         <div class="detail-value">
           <span class="detail-pw">${'•'.repeat(12)}</span>
           <button class="pw-toggle" onclick="togglePw(this, '${escAttr(d.totp)}')">👁</button>
@@ -869,14 +939,14 @@ function openDetailDrawer(cipher) {
     }
 
     if (d.passwordRevisionDate) {
-      html += detailField('密码修改日期', new Date(d.passwordRevisionDate).toLocaleString('zh-CN'), false);
+      html += detailField(t('detail.pw.date'), new Date(d.passwordRevisionDate).toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US'), false);
     }
 
     // Passkeys
     const passkeys = cipher.raw?.Login?.Fido2Credentials || [];
     if (passkeys.length > 0) {
-      html += `<div class="detail-field"><div class="detail-label">通行密钥</div>
-        <div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length} 个通行密钥</span></div></div>`;
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.passkey')}</div>
+        <div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length}${t('detail.passkey.count')}</span></div></div>`;
     }
     html += '</div>';
   }
@@ -884,9 +954,9 @@ function openDetailDrawer(cipher) {
   // ── Section: URIs ──
   const uris = d.uris?.filter(Boolean) || [];
   if (uris.length > 0) {
-    html += '<div class="detail-section"><div class="detail-section-title">自动填充选项</div>';
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.autofill')}</div>`;
     uris.forEach((u, idx) => {
-      html += `<div class="detail-field"><div class="detail-label">网站 (URI) ${uris.length > 1 ? idx + 1 : ''}</div>
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.uri')} ${uris.length > 1 ? idx + 1 : ''}</div>
         <div class="detail-value">${escHtml(u)}
           <button class="copy-btn" onclick="copyText('${escAttr(u)}', this)">📋</button>
         </div></div>`;
@@ -896,11 +966,11 @@ function openDetailDrawer(cipher) {
 
   // ── Section: Card ──
   if (cipher.type === 3 && d.card) {
-    html += '<div class="detail-section"><div class="detail-section-title">卡片信息</div>';
-    if (d.card.brand) html += detailField('品牌', d.card.brand, false);
-    if (d.card.cardholderName) html += detailField('持卡人', d.card.cardholderName, true);
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.card')}</div>`;
+    if (d.card.brand) html += detailField(t('detail.card.brand'), d.card.brand, false);
+    if (d.card.cardholderName) html += detailField(t('detail.card.holder'), d.card.cardholderName, true);
     if (d.card.number) {
-      html += `<div class="detail-field"><div class="detail-label">卡号</div>
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.card.number')}</div>
         <div class="detail-value">
           <span class="detail-pw">${'•'.repeat(12)}</span>
           <button class="pw-toggle" onclick="togglePw(this, '${escAttr(d.card.number)}')">👁</button>
@@ -908,10 +978,10 @@ function openDetailDrawer(cipher) {
         </div></div>`;
     }
     if (d.card.expMonth || d.card.expYear) {
-      html += detailField('有效期', `${d.card.expMonth || '??'}/${d.card.expYear || '????'}`, false);
+      html += detailField(t('detail.card.expiry'), `${d.card.expMonth || '??'}/${d.card.expYear || '????'}`, false);
     }
     if (d.card.code) {
-      html += `<div class="detail-field"><div class="detail-label">安全码</div>
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.card.cvv')}</div>
         <div class="detail-value">
           <span class="detail-pw">•••</span>
           <button class="pw-toggle" onclick="togglePw(this, '${escAttr(d.card.code)}')">👁</button>
@@ -924,16 +994,16 @@ function openDetailDrawer(cipher) {
   // ── Section: Identity ──
   if (cipher.type === 4 && d.identity) {
     const id = d.identity;
-    html += '<div class="detail-section"><div class="detail-section-title">身份信息</div>';
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.identity')}</div>`;
     const idFields = [
-      ['称谓', id.title], ['名', id.firstName], ['中间名', id.middleName],
-      ['姓', id.lastName], ['公司', id.company], ['邮箱', id.email],
-      ['电话', id.phone], ['用户名', id.username],
-      ['护照号', id.passportNumber], ['驾照号', id.licenseNumber],
+      [t('detail.id.title'), id.title], [t('detail.id.first'), id.firstName], [t('detail.id.middle'), id.middleName],
+      [t('detail.id.last'), id.lastName], [t('detail.id.company'), id.company], [t('detail.id.email'), id.email],
+      [t('detail.id.phone'), id.phone], [t('detail.id.user'), id.username],
+      [t('detail.id.passport'), id.passportNumber], [t('detail.id.license'), id.licenseNumber],
       ['SSN', id.ssn],
-      ['地址1', id.address1], ['地址2', id.address2], ['地址3', id.address3],
-      ['城市', id.city], ['州/省', id.state],
-      ['邮编', id.postalCode], ['国家', id.country],
+      [t('detail.id.addr1'), id.address1], [t('detail.id.addr2'), id.address2], [t('detail.id.addr3'), id.address3],
+      [t('detail.id.city'), id.city], [t('detail.id.state'), id.state],
+      [t('detail.id.zip'), id.postalCode], [t('detail.id.country'), id.country],
     ];
     idFields.forEach(([label, val]) => {
       if (val) html += detailField(label, val, true);
@@ -943,19 +1013,19 @@ function openDetailDrawer(cipher) {
 
   // ── Section: Custom Fields ──
   if (d.fields && d.fields.length > 0) {
-    html += '<div class="detail-section"><div class="detail-section-title">自定义字段</div>';
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.fields')}</div>`;
     d.fields.forEach(f => {
       if (f.type === 1) { // hidden
-        html += `<div class="detail-field"><div class="detail-label">${escHtml(f.name || '(无名)')}</div>
+        html += `<div class="detail-field"><div class="detail-label">${escHtml(f.name || t('detail.field.noname'))}</div>
           <div class="detail-value">
             <span class="detail-pw">${'•'.repeat(8)}</span>
             <button class="pw-toggle" onclick="togglePw(this, '${escAttr(f.value || '')}')">👁</button>
             <button class="copy-btn" onclick="copyText('${escAttr(f.value || '')}', this)">📋</button>
           </div></div>`;
       } else if (f.type === 2) { // boolean
-        html += detailField(f.name || '(无名)', f.value === 'true' ? '✅ 是' : '❌ 否', false);
+        html += detailField(f.name || t('detail.field.noname'), f.value === 'true' ? t('detail.field.yes') : t('detail.field.no'), false);
       } else { // text or linked
-        html += detailField(f.name || '(无名)', f.value || '', true);
+        html += detailField(f.name || t('detail.field.noname'), f.value || '', true);
       }
     });
     html += '</div>';
@@ -963,29 +1033,29 @@ function openDetailDrawer(cipher) {
 
   // ── Section: Notes ──
   if (d.notes) {
-    html += `<div class="detail-section"><div class="detail-section-title">附加选项</div>
-      <div class="detail-field"><div class="detail-label">备注</div>
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.extra')}</div>
+      <div class="detail-field"><div class="detail-label">${t('detail.notes')}</div>
         <div class="detail-value" style="white-space:pre-wrap">${escHtml(d.notes)}</div></div>`;
     if (d.reprompt === 1) {
-      html += '<div class="detail-field"><div class="detail-label">主密码重新提示</div><div class="detail-value">✅ 已启用</div></div>';
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.reprompt')}</div><div class="detail-value">${t('detail.reprompt.enabled')}</div></div>`;
     }
     html += '</div>';
   } else if (d.reprompt === 1) {
-    html += `<div class="detail-section"><div class="detail-section-title">附加选项</div>
-      <div class="detail-field"><div class="detail-label">主密码重新提示</div><div class="detail-value">✅ 已启用</div></div></div>`;
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.extra')}</div>
+      <div class="detail-field"><div class="detail-label">${t('detail.reprompt')}</div><div class="detail-value">${t('detail.reprompt.enabled')}</div></div></div>`;
   }
 
   // ── Section: Metadata ──
   html += `<div class="detail-section detail-meta-section">
-    ${detailField('修改日期', new Date(cipher.raw?.RevisionDate).toLocaleString('zh-CN'), false)}
-    ${d.creationDate ? detailField('创建日期', new Date(d.creationDate).toLocaleString('zh-CN'), false) : ''}
+    ${detailField(t('detail.date.modified'), new Date(cipher.raw?.RevisionDate).toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US'), false)}
+    ${d.creationDate ? detailField(t('detail.date.created'), new Date(d.creationDate).toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US'), false) : ''}
     ${detailField('ID', cipher.id, true)}
   </div>`;
 
   // ── Edit + Delete Buttons ──
   html += `<div class="detail-actions">
-    <button class="detail-edit-btn" id="detail-edit-btn">✏️ 编辑条目</button>
-    <button class="detail-delete-btn" id="detail-delete-btn">🗑️ 删除条目</button>
+    <button class="detail-edit-btn" id="detail-edit-btn">${t('detail.btn.edit')}</button>
+    <button class="detail-delete-btn" id="detail-delete-btn">${t('detail.btn.delete')}</button>
   </div>`;
 
   body.innerHTML = html;
@@ -1039,7 +1109,7 @@ function openEditDrawer(cipher) {
   const overlay = $('#detail-overlay');
   overlay.style.display = 'block';
 
-  $('#detail-title').textContent = '编辑 - ' + (cipher.decrypted?.name || '(无标题)');
+  $('#detail-title').textContent = t('edit.title.prefix') + (cipher.decrypted?.name || t('item.untitled'));
 
   const body = $('#detail-body');
   const d = cipher.decrypted;
@@ -1055,15 +1125,15 @@ function openEditDrawer(cipher) {
 
   // ── Item Info ──
   html += `<div class="edit-section">
-    <div class="edit-section-title">项目信息</div>
+    <div class="edit-section-title">${t('edit.section.info')}</div>
     <div class="edit-field">
-      <label>项目名称</label>
+      <label>${t('edit.label.name')}</label>
       <input type="text" id="edit-name" value="${escAttr(d.name || '')}">
     </div>
     <div class="edit-field">
-      <label>文件夹</label>
+      <label>${t('edit.label.folder')}</label>
       <select id="edit-folder">
-        <option value="">-- 无文件夹 --</option>
+        <option value="">${t('edit.folder.none')}</option>
         ${folderOptions}
       </select>
     </div>
@@ -1072,49 +1142,49 @@ function openEditDrawer(cipher) {
   // ── Login Credentials ──
   if (cipher.type === 1) {
     html += `<div class="edit-section">
-      <div class="edit-section-title">登录凭据</div>
+      <div class="edit-section-title">${t('edit.section.login')}</div>
       <div class="edit-field">
-        <label>用户名</label>
+        <label>${t('edit.label.user')}</label>
         <input type="text" id="edit-username" value="${escAttr(d.username || '')}">
       </div>
       <div class="edit-field">
-        <label>密码</label>
+        <label>${t('edit.label.pw')}</label>
         <input type="password" id="edit-password" value="${escAttr(d.password || '')}">
       </div>
       <div class="edit-field">
-        <label>验证器密钥 (TOTP)</label>
-        <input type="text" id="edit-totp" value="${escAttr(d.totp || '')}" placeholder="otpauth:// 或密钥">
+        <label>${t('detail.totp.key')}</label>
+        <input type="text" id="edit-totp" value="${escAttr(d.totp || '')}" placeholder="otpauth:// or key">
       </div>
     </div>`;
 
     // ── URIs ──
     html += `<div class="edit-section">
-      <div class="edit-section-title">自动填充选项</div>
+      <div class="edit-section-title">${t('edit.section.uris')}</div>
       <div id="edit-uris-container">
         ${uris.map((u, i) => `<div class="uri-row" data-idx="${i}">
           <input type="text" class="edit-uri" value="${escAttr(u)}">
           <button class="uri-remove-btn" type="button" onclick="this.parentElement.remove()">✕</button>
         </div>`).join('')}
       </div>
-      <button class="add-btn" type="button" id="add-uri-btn">＋ 添加网站</button>
+      <button class="add-btn" type="button" id="add-uri-btn">${t('edit.add.uri')}</button>
     </div>`;
   }
 
   // ── Notes + Reprompt ──
   html += `<div class="edit-section">
-    <div class="edit-section-title">附加选项</div>
+    <div class="edit-section-title">${t('detail.section.extra')}</div>
     <div class="edit-field">
-      <label>备注</label>
+      <label>${t('edit.section.notes')}</label>
       <textarea id="edit-notes">${escHtml(d.notes || '')}</textarea>
     </div>
     <div class="edit-field" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="edit-reprompt" ${d.reprompt === 1 ? 'checked' : ''}>
-      <label for="edit-reprompt" style="margin:0;text-transform:none;font-size:0.88rem">主密码重新提示</label>
+      <label for="edit-reprompt" style="margin:0;text-transform:none;font-size:0.88rem">${t('detail.reprompt')}</label>
     </div>
   </div>`;
 
-  // ── Custom Fields (官方4类型: 0=文本, 1=隐藏, 2=复选框, 3=链接) ──
-  const fieldTypeLabel = { 0: '文本型', 1: '隐藏型', 2: '复选框型', 3: '链接型' };
+  // ── Custom Fields (4 types: 0=text, 1=hidden, 2=boolean, 3=linked) ──
+  const fieldTypeLabel = { 0: t('detail.type.unknown') === 'Unknown' ? 'Text' : '文本型', 1: getLocale() === 'en' ? 'Hidden' : '隐藏型', 2: getLocale() === 'en' ? 'Boolean' : '复选框型', 3: getLocale() === 'en' ? 'Linked' : '链接型' };
   function buildFieldRow(f = { name: '', value: '', type: 0 }, idx = 0) {
     const typeOptions = [0,1,2,3].map(t =>
       `<option value="${t}" ${f.type === t ? 'selected' : ''}>${fieldTypeLabel[t]}</option>`
@@ -1122,15 +1192,15 @@ function openEditDrawer(cipher) {
     let valueHtml = '';
     if (f.type === 2) {
       // Boolean → checkbox
-      valueHtml = `<label class="cf-checkbox-wrap"><input type="checkbox" class="edit-field-value" ${f.value === 'true' ? 'checked' : ''} data-field-type="2"><span>已启用</span></label>`;
+      valueHtml = `<label class="cf-checkbox-wrap"><input type="checkbox" class="edit-field-value" ${f.value === 'true' ? 'checked' : ''} data-field-type="2"><span>${getLocale() === 'en' ? 'Enabled' : '已启用'}</span></label>`;
     } else {
       const inputType = f.type === 1 ? 'password' : 'text';
-      const placeholder = f.type === 3 ? 'html ID、名称、aria-label 或占位符' : '值';
+      const placeholder = f.type === 3 ? (getLocale() === 'en' ? 'html ID, name, aria-label, or placeholder' : 'html ID、名称、aria-label 或占位符') : (getLocale() === 'en' ? 'Value' : '值');
       valueHtml = `<input type="${inputType}" class="edit-field-value" value="${escAttr(f.value || '')}" placeholder="${placeholder}" data-field-type="${f.type}">`;
     }
     return `<div class="custom-field-row" data-idx="${idx}">
       <div class="cf-name-type">
-        <input type="text" class="edit-field-name" value="${escAttr(f.name || '')}" placeholder="字段标签">
+        <input type="text" class="edit-field-name" value="${escAttr(f.name || '')}" placeholder="${getLocale() === 'en' ? 'Field label' : '字段标签'}">
         <select class="edit-field-type">${typeOptions}</select>
       </div>
       <div class="cf-value-action">
@@ -1140,29 +1210,29 @@ function openEditDrawer(cipher) {
     </div>`;
   }
   html += `<div class="edit-section">
-    <div class="edit-section-title">自定义字段</div>
+    <div class="edit-section-title">${t('detail.section.fields')}</div>
     <div id="edit-fields-container">
       ${fields.map((f, i) => buildFieldRow(f, i)).join('')}
     </div>
-    <button class="add-btn" type="button" id="add-field-btn">＋ 添加字段</button>
+    <button class="add-btn" type="button" id="add-field-btn">${getLocale() === 'en' ? '+ Add Field' : '＋ 添加字段'}</button>
   </div>`;
 
   // ── Passkeys (read-only info) ──
   const passkeys = cipher.raw?.Login?.Fido2Credentials || [];
   if (passkeys.length > 0) {
     html += `<div class="edit-section">
-      <div class="edit-section-title">通行密钥</div>
-      <div class="detail-field"><div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length} 个通行密钥（不可编辑）</span></div></div>
+      <div class="edit-section-title">${t('detail.passkey')}</div>
+      <div class="detail-field"><div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length}${t('detail.passkey.count')} ${getLocale() === 'en' ? '(read-only)' : '（不可编辑）'}</span></div></div>
     </div>`;
   }
 
   // ── Actions ──
   html += `<div class="edit-actions">
-    <button class="edit-save-btn" id="edit-save-btn">💾 保存</button>
-    <button class="edit-cancel-btn" id="edit-cancel-btn">取消</button>
+    <button class="edit-save-btn" id="edit-save-btn">${t('edit.btn.save')}</button>
+    <button class="edit-cancel-btn" id="edit-cancel-btn">${t('edit.btn.cancel')}</button>
   </div>
   <div class="edit-danger-zone">
-    <button class="edit-delete-btn" id="edit-delete-btn">🗑️ 删除此条目</button>
+    <button class="edit-delete-btn" id="edit-delete-btn">${t('detail.delete')}</button>
   </div>`;
 
   html += '</div>';
@@ -1200,7 +1270,7 @@ function openEditDrawer(cipher) {
       if (t === 2) {
         const label = document.createElement('label');
         label.className = 'cf-checkbox-wrap';
-        label.innerHTML = `<input type="checkbox" class="edit-field-value" data-field-type="2"><span>已启用</span>`;
+        label.innerHTML = `<input type="checkbox" class="edit-field-value" data-field-type="2"><span>${getLocale() === 'en' ? 'Enabled' : '已启用'}</span>`;
         newEl = label;
       } else {
         newEl = document.createElement('input');
@@ -1652,7 +1722,7 @@ function renderOverview() {
         </svg>
         <div class="health-score-value">
           <span class="health-score-num" style="color:${color}">${health.score}</span>
-          <span class="health-score-label">健康评分</span>
+          <span class="health-score-label">${t('overview.health.score')}</span>
         </div>
       </div>
       <div class="health-issues-summary">
@@ -1662,49 +1732,49 @@ function renderOverview() {
             <span class="issue-count">${i.count}</span>
             <span>${i.label}</span>
           </div>
-        `).join('') || '<div class="health-issue-row" style="color:var(--success)">🎉 你的保险库非常健康！</div>'}
+        `).join('') || `<div class="health-issue-row" style="color:var(--success)">🎉 ${getLocale() === 'en' ? 'Your vault is very healthy!' : '你的保险库非常健康！'}</div>`}
       </div>
     </div>
 
     <div class="overview-grid">
       <div class="stat-card clickable" onclick="document.querySelector('[data-view=all]').click()">
         <div class="stat-number">${stats.totalItems}</div>
-        <div class="stat-label">总条目</div>
+        <div class="stat-label">${t('overview.title')}</div>
       </div>
       <div class="stat-card clickable" onclick="document.querySelector('[data-view=all]').click()">
         <div class="stat-number">${stats.loginItems}</div>
-        <div class="stat-label">登录项</div>
+        <div class="stat-label">${t('overview.logins')}</div>
       </div>
       <div class="stat-card warn clickable" onclick="document.querySelector('[data-view=duplicates]').click()">
         <div class="stat-number">${stats.exactDuplicateGroups + stats.sameSiteDuplicateGroups}</div>
-        <div class="stat-label">重复组</div>
+        <div class="stat-label">${t('overview.dup.groups')}</div>
       </div>
       <div class="stat-card warn clickable" onclick="document.querySelector('[data-view=duplicates]').click()">
         <div class="stat-number">${stats.totalDuplicateItems}</div>
-        <div class="stat-label">可清理</div>
+        <div class="stat-label">${t('overview.cleanable')}</div>
       </div>
       <div class="stat-card info clickable" onclick="document.querySelector('[data-view=orphans]').click()">
         <div class="stat-number">${stats.orphanItems}</div>
-        <div class="stat-label">孤立项</div>
+        <div class="stat-label">${t('overview.orphans')}</div>
       </div>
     </div>
 
-    <h3 style="margin-bottom: 12px; font-size: 0.95rem; color: var(--text-secondary)">⚡ 快捷操作</h3>
+    <h3 style="margin-bottom: 12px; font-size: 0.95rem; color: var(--text-secondary)">${t('overview.quick')}</h3>
     <div class="quick-actions">
       <button class="quick-action-btn" onclick="document.querySelector('[data-view=duplicates]').click()">
-        <span class="quick-action-icon">🔀</span> 一键清理重复项
+        <span class="quick-action-icon">🔀</span> ${t('overview.quick.dedup')}
       </button>
       <button class="quick-action-btn" onclick="document.querySelector('[data-view=health]').click()">
-        <span class="quick-action-icon">🛡️</span> 查看弱密码
+        <span class="quick-action-icon">🛡️</span> ${t('overview.quick.weak')}
       </button>
       <button class="quick-action-btn" id="qa-no-url">
-        <span class="quick-action-icon">🔗</span> 搜索无URL条目
+        <span class="quick-action-icon">🔗</span> ${t('overview.quick.nourl')}
       </button>
       <button class="quick-action-btn" id="qa-no-name">
-        <span class="quick-action-icon">📝</span> 搜索无标题条目
+        <span class="quick-action-icon">📝</span> ${t('overview.quick.notitle')}
       </button>
       <button class="quick-action-btn" id="qa-no-folder">
-        <span class="quick-action-icon">📂</span> 搜索无文件夹条目
+        <span class="quick-action-icon">📂</span> ${t('overview.quick.nofolder')}
       </button>
     </div>
   `;
@@ -1823,7 +1893,7 @@ function renderDuplicatesView() {
   const groups = analysisResult.duplicateGroups;
 
   if (groups.length === 0) {
-    container.innerHTML = '<div class="empty-state">🎉 没有发现重复项！你的保险库很干净。</div>';
+    container.innerHTML = `<div class="empty-state">${t('dup.empty')}</div>`;
     return;
   }
 
@@ -1834,8 +1904,8 @@ function renderDuplicatesView() {
   container.innerHTML = `
     ${exactGroups.length > 0 ? `
       <div class="section-header">
-        <span class="section-title">完全重复 · ${exactGroups.length} 组</span>
-        <span class="section-hint">同 URL + 同用户名 + 同密码</span>
+        <span class="section-title">${t('dup.exact')} · ${exactGroups.length} ${t('dup.groups')}</span>
+        <span class="section-hint">${t('dup.exact.hint')}</span>
       </div>
       ${exactGroups.map((group, gi) => {
         const globalIdx = groups.indexOf(group);
@@ -1844,12 +1914,12 @@ function renderDuplicatesView() {
           <div class="dup-group-header">
             <label class="group-checkbox">
               <input type="checkbox" class="group-select" data-gi="${globalIdx}" checked>
-              <span class="badge badge-exact">完全重复</span>
+              <span class="badge badge-exact">${t('dup.exact')}</span>
               ${group.pureDelete
-                ? '<span class="badge badge-pure-delete">✅ 可直接删除</span>'
-                : '<span class="badge badge-needs-merge">🔀 需合并</span>'}
+                ? `<span class="badge badge-pure-delete">${t('dup.candelete')}</span>`
+                : `<span class="badge badge-needs-merge">${t('dup.needmerge')}</span>`}
               <span class="group-title">${escHtml(group.label)}</span>
-              <span class="group-count">${group.items.length} 个条目</span>
+              <span class="group-count">${group.items.length} ${t('dup.items')}</span>
             </label>
             ${group.diffFields && group.diffFields.length > 0
               ? `<div class="diff-tags">${group.diffFields.map(d => `<span class="diff-tag">⚠️ ${escHtml(d)}</span>`).join('')}</div>`
@@ -1864,8 +1934,8 @@ function renderDuplicatesView() {
 
     ${sameGroups.length > 0 ? `
       <div class="section-header" style="margin-top:24px">
-        <span class="section-title">同站重复 · ${sameGroups.length} 组</span>
-        <span class="section-hint">✅ 勾选要合并的条目，未勾选的保持不变</span>
+        <span class="section-title">${t('dup.samesite')} · ${sameGroups.length} ${t('dup.groups')}</span>
+        <span class="section-hint">${t('dup.samesite.hint')}</span>
       </div>
       ${sameGroups.map((group) => {
         const globalIdx = groups.indexOf(group);
@@ -1874,17 +1944,17 @@ function renderDuplicatesView() {
         return `
         <div class="dup-group site-group" data-group-index="${globalIdx}">
           <div class="dup-group-header">
-            <span class="badge badge-site">同站</span>
+            <span class="badge badge-site">${t('dup.samesite.badge')}</span>
             ${group.diffFields && group.diffFields.length > 0
               ? group.diffFields.map(d => `<span class="diff-tag">⚠️ ${escHtml(d)}</span>`).join('')
               : ''}
             <span class="group-title">${escHtml(group.label)}</span>
-            <span class="group-count">${group.items.length} 个条目 · ${byUser.length} 个账号</span>
+            <span class="group-count">${group.items.length} ${t('dup.items')} · ${byUser.length} ${t('dup.accounts')}</span>
           </div>
           <div class="dup-items site-items">
             ${byUser.map((userGroup, ui) => `
               ${ui > 0 ? '<div class="username-divider"></div>' : ''}
-              ${userGroup.items.length > 1 ? `<div class="username-section-label">👤 ${escHtml(userGroup.username || '—')} · ${userGroup.items.length} 条</div>` : ''}
+              ${userGroup.items.length > 1 ? `<div class="username-section-label">👤 ${escHtml(userGroup.username || '—')} · ${userGroup.items.length} ${t('dup.entries')}</div>` : ''}
               ${userGroup.items.map(item => renderSiteDupItem(item, globalIdx)).join('')}
             `).join('')}
           </div>
@@ -1894,7 +1964,7 @@ function renderDuplicatesView() {
 
     <div class="merge-bar" id="merge-bar">
       <span id="merge-count"></span>
-      <button id="merge-btn" class="merge-btn">🔀 一键合并</button>
+      <button id="merge-btn" class="merge-btn">${t('dup.merge.btn')}</button>
     </div>
   `;
 
@@ -1965,16 +2035,16 @@ function renderExactDupItem(item, gi, ii, isFirst) {
     <div class="dup-item ${isFirst ? 'keep-item' : 'remove-item'}" data-id="${item.id}">
       <label class="item-radio">
         <input type="radio" name="keep-${gi}" data-gi="${gi}" data-ii="${ii}" ${isFirst ? 'checked' : ''}>
-        <span class="radio-label">${isFirst ? '✅ 保留' : '🗑️ 删除'}</span>
+        <span class="radio-label">${isFirst ? `✅ ${t('dup.keep')}` : `🗑️ ${t('dup.remove')}`}</span>
       </label>
       <div class="item-details">
-        <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+        <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
         <div class="item-meta">
           <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
           <span>🔗 ${uris.length > 0 ? escHtml(uris[0]) : '—'}</span>
-          ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} 个通行密钥</span>` : ''}
+          ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} ${t('detail.passkey')}</span>` : ''}
           ${item.decrypted?.totp ? '<span class="has-totp">🕐 TOTP</span>' : ''}
-          <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || '无文件夹')}</span>
+          <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
         </div>
       </div>
     </div>
@@ -1995,14 +2065,14 @@ function renderSiteDupItem(item, gi) {
         <input type="checkbox" class="site-item-cb" data-gi="${gi}" data-id="${item.id}">
       </label>
       <div class="item-details">
-        <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+        <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
         <div class="item-meta">
           <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
           <span>🔗 ${uris.length > 0 ? escHtml(uris[0]) : '—'}</span>
-          ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} 个通行密钥</span>` : ''}
+          ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} ${t('detail.passkey')}</span>` : ''}
           ${item.decrypted?.totp ? '<span class="has-totp">🕐 TOTP</span>' : ''}
-          ${fields > 0 ? `<span class="has-fields">📝 ${fields} 个自定义字段</span>` : ''}
-          <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || '无文件夹')}</span>
+          ${fields > 0 ? `<span class="has-fields">📝 ${fields} ${t('detail.section.fields')}</span>` : ''}
+          <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
         </div>
       </div>
     </div>
@@ -2016,9 +2086,9 @@ function updateMergeCount() {
   const el = $('#merge-count');
   if (!el) return;
   const parts = [];
-  if (exactTotal > 0) parts.push(`完全重复 ${exactChecked}/${exactTotal} 组`);
-  if (siteChecked > 0) parts.push(`同站 ${siteChecked} 条已选`);
-  el.textContent = parts.join(' · ') || '请选择要处理的项';
+  if (exactTotal > 0) parts.push(`${t('dup.exact')} ${exactChecked}/${exactTotal} ${t('dup.groups')}`);
+  if (siteChecked > 0) parts.push(`${t('dup.samesite.badge')} ${siteChecked} ${t('dup.entries')}`);
+  el.textContent = parts.join(' · ') || t('batch.selected');
 }
 
 // ========================
@@ -2029,7 +2099,7 @@ function renderOrphansView() {
   const orphans = analysisResult.orphans;
 
   if (orphans.length === 0) {
-    container.innerHTML = '<div class="empty-state">✅ 没有孤立项。</div>';
+    container.innerHTML = `<div class="empty-state">${t('orphan.empty')}</div>`;
     return;
   }
 
@@ -2040,9 +2110,9 @@ function renderOrphansView() {
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="orphan-select-all-cb" ${allSelected ? 'checked' : ''} />
-          全选
+          ${t('select.all')}
         </label>
-        孤立项 · ${orphans.length} 条（不在任何重复组中的独立条目）
+        ${t('orphan.title')} · ${orphans.length} ${t('dup.items')}
       </span>
     </div>
     ${orphans.map(item => {
@@ -2052,11 +2122,11 @@ function renderOrphansView() {
       <div class="orphan-item selectable" data-id="${item.id}">
         <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
         <div class="item-info">
-          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : '<span class="orphan-tag">无URL</span>'}
-            <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || '无文件夹')}</span>
+            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
+            <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
           </div>
         </div>
       </div>`;
@@ -2172,13 +2242,13 @@ function renderHealthView() {
   const health = healthResult;
 
   if (health.issues.length === 0) {
-    container.innerHTML = '<div class="empty-state">🎉 你的保险库非常健康！所有密码都很安全。</div>';
+    container.innerHTML = `<div class="empty-state">${t('health.empty')}</div>`;
     return;
   }
 
   container.innerHTML = `
     <div class="section-header">
-      <span class="section-title">🛡️ 健康分析 · 评分 ${health.score}/100</span>
+      <span class="section-title">🛡️ ${t('health.title')} · ${t('health.score.label')} ${health.score}/100</span>
     </div>
     ${health.issues.map((issue, i) => `
       <div class="health-issue-card" data-index="${i}">
@@ -2186,18 +2256,18 @@ function renderHealthView() {
           <div class="severity-indicator ${issue.severity}"></div>
           <div class="health-card-info">
             <div class="health-card-label">${issue.label}</div>
-            <div class="health-card-count">${issue.count} 个条目</div>
+            <div class="health-card-count">${issue.count} ${t('dup.items')}</div>
           </div>
           <span class="health-card-arrow">›</span>
         </div>
         <div class="health-card-items">
           ${(issue.items || []).slice(0, 50).map(c => `
             <div class="health-sub-item" data-id="${c.id}" style="cursor:pointer">
-              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.decrypted?.name || '(无标题)')}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.decrypted?.name || t('item.untitled'))}</span>
               <span style="color:var(--text-muted);flex-shrink:0">${escHtml(c.decrypted?.username || '')}</span>
             </div>
           `).join('')}
-          ${(issue.items || []).length > 50 ? `<div class="health-sub-item" style="color:var(--text-muted)">...还有 ${issue.items.length - 50} 项</div>` : ''}
+          ${(issue.items || []).length > 50 ? `<div class="health-sub-item" style="color:var(--text-muted)">${t('health.more')} (${issue.items.length - 50})</div>` : ''}
         </div>
       </div>
     `).join('')}
@@ -2228,7 +2298,7 @@ function renderTrashView() {
   const trashItems = allDecryptedTrash;
 
   if (trashItems.length === 0) {
-    container.innerHTML = '<div class="empty-state">✅ 回收站为空</div>';
+    container.innerHTML = `<div class="empty-state">${t('trash.empty')}</div>`;
     return;
   }
 
@@ -2239,33 +2309,33 @@ function renderTrashView() {
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="trash-select-all-cb" ${allSelected ? 'checked' : ''} />
-          全选
+          ${t('select.all')}
         </label>
-        🗑️ 回收站 · ${trashItems.length} 条
+        🗑️ ${t('trash.title')} · ${trashItems.length} ${t('dup.items')}
       </span>
-      <span class="section-hint">条目将在 30 天后自动永久删除</span>
+      <span class="section-hint">${t('trash.hint')}</span>
     </div>
     <div class="trash-batch-bar" id="trash-batch-bar" style="display:none">
       <span id="trash-batch-count"></span>
       <div class="batch-actions">
-        <button class="batch-btn move" id="trash-restore-btn">🔄 恢复到文件夹</button>
-        <button class="batch-btn danger" id="trash-perm-delete-btn">⛔ 永久删除</button>
-        <button class="batch-btn" id="trash-cancel-btn">✕ 取消</button>
+        <button class="batch-btn move" id="trash-restore-btn">${t('trash.restore')}</button>
+        <button class="batch-btn danger" id="trash-perm-delete-btn">${t('trash.permdelete')}</button>
+        <button class="batch-btn" id="trash-cancel-btn">${t('trash.cancel')}</button>
       </div>
     </div>
     ${trashItems.map(item => {
       const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
       const checked = selectedItems.has(item.id) ? 'checked' : '';
-      const deletedAt = item.raw?.DeletedDate ? new Date(item.raw.DeletedDate).toLocaleDateString('zh-CN') : '';
+      const deletedAt = item.raw?.DeletedDate ? new Date(item.raw.DeletedDate).toLocaleDateString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') : '';
       return `
         <div class="orphan-item selectable" data-id="${item.id}">
           <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
           <div class="item-info">
-            <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+            <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
             <div class="item-meta">
               <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-              ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : '<span class="orphan-tag">无URL</span>'}
-              ${deletedAt ? `<span class="trash-date">🗓️ 删除于 ${deletedAt}</span>` : ''}
+              ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
+              ${deletedAt ? `<span class="trash-date">🗓️ ${t('trash.deletedon')} ${deletedAt}</span>` : ''}
             </div>
           </div>
         </div>`;

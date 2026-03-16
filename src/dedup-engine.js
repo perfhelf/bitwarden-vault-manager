@@ -3,6 +3,7 @@
  * Analyzes decrypted vault items to find duplicates and orphans
  * Supports 3 scenarios: pure delete, complementary merge, deep merge
  */
+import { t } from './i18n.js';
 
 /**
  * Analyze ciphers and return duplicate groups + orphans
@@ -90,13 +91,13 @@ function findDiffFields(a, b) {
   const diffs = [];
 
   // Name
-  if (da.name !== db.name) diffs.push('名称');
+  if (da.name !== db.name) diffs.push(t('dup.title.warn'));
 
   // TOTP
   if (da.totp !== db.totp) diffs.push('TOTP');
 
   // Notes
-  if ((da.notes || '') !== (db.notes || '')) diffs.push('备注');
+  if ((da.notes || '') !== (db.notes || '')) diffs.push(t('detail.notes'));
 
   // URIs
   const urisA = new Set((da.uris || []).filter(Boolean));
@@ -104,20 +105,20 @@ function findDiffFields(a, b) {
   if (!setsEqual(urisA, urisB)) diffs.push('URI');
 
   // Custom fields
-  if (serializeFields(da.fields) !== serializeFields(db.fields)) diffs.push('自定义字段');
+  if (serializeFields(da.fields) !== serializeFields(db.fields)) diffs.push(t('detail.section.fields'));
 
   // Passkeys
   const passkeysA = new Set(getPasskeyIds(a));
   const passkeysB = new Set(getPasskeyIds(b));
-  if (!setsEqual(passkeysA, passkeysB)) diffs.push('通行密钥');
+  if (!setsEqual(passkeysA, passkeysB)) diffs.push(t('detail.passkey'));
 
   // Favorite
   const favA = a.raw?.Favorite || a.raw?.favorite || false;
   const favB = b.raw?.Favorite || b.raw?.favorite || false;
-  if (favA !== favB) diffs.push('收藏');
+  if (favA !== favB) diffs.push(t('detail.favorite'));
 
   // Reprompt
-  if ((da.reprompt || 0) !== (db.reprompt || 0)) diffs.push('主密码提示');
+  if ((da.reprompt || 0) !== (db.reprompt || 0)) diffs.push(t('detail.reprompt'));
 
   return diffs;
 }
@@ -169,7 +170,7 @@ function findExactDuplicates(logins) {
       const { pureDelete, diffFields } = analyzeGroupDiffs(sorted);
       return {
         type: 'exact',
-        label: `完全重复: ${sorted[0].decrypted?.name || getPrimaryUri(sorted[0])}`,
+        label: `${t('dup.exact')}: ${sorted[0].decrypted?.name || getPrimaryUri(sorted[0])}`,
         matchKey: getPrimaryUri(sorted[0]),
         items: sorted,
         autoMergeable: true,
@@ -216,7 +217,7 @@ function findSameSiteDuplicates(logins, exactDupes) {
       const { pureDelete, diffFields } = analyzeGroupDiffs(sorted);
       return {
         type: 'same_site',
-        label: `同站重复: ${normalizeUri(getPrimaryUri(sorted[0]))}`,
+        label: `${t('dup.samesite')}: ${normalizeUri(getPrimaryUri(sorted[0]))}`,
         matchKey: normalizeUri(getPrimaryUri(sorted[0])),
         items: sorted,
         autoMergeable: false,
