@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/bw-identity/:path*",
+      "destination": "https://identity.bitwarden.com/:path*"
+    },
+    {
+      "source": "/bw-api/:path*",
+      "destination": "https://api.bitwarden.com/:path*"
+    },
+    {
+      "source": "/bw-eu-identity/:path*",
+      "destination": "https://identity.bitwarden.eu/:path*"
+    },
+    {
+      "source": "/bw-eu-api/:path*",
+      "destination": "https://api.bitwarden.eu/:path*"
+    }
+  ]
+}
