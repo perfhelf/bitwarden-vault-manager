@@ -357,10 +357,26 @@ export class BitwardenClient {
   }
 
   async _authedFetch(url, options = {}) {
-    const headers = {
-      ...options.headers,
-      Authorization: `Bearer ${this.accessToken}`,
-    };
-    return fetch(url, { ...options, headers });
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const headers = {
+        ...options.headers,
+        Authorization: `Bearer ${this.accessToken}`,
+      };
+      try {
+        const res = await fetch(url, { ...options, headers });
+        // 4xx = business error, don't retry; 2xx/3xx = success
+        if (res.ok || res.status < 500) return res;
+        // 5xx = server error, retry unless last attempt
+        if (attempt === maxRetries) return res;
+      } catch (err) {
+        // Network error (offline, DNS, timeout) — retry unless last attempt
+        if (attempt === maxRetries) throw err;
+      }
+      // Exponential backoff: 1s → 2s → 4s + random jitter (0-500ms)
+      const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+      const jitter = Math.random() * 500;
+      await new Promise(r => setTimeout(r, delay + jitter));
+    }
   }
 }

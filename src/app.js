@@ -131,6 +131,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupCredFileImport();
   setupKeyboardShortcuts();
 
+  // Network awareness — 断网提示 + 恢复自动同步
+  window.addEventListener('offline', () => {
+    showToast('⚠️ 网络已断开，操作可能失败', 'warning');
+  });
+  window.addEventListener('online', () => {
+    showToast('✅ 网络已恢复', 'success');
+    if (client && symmetricKey) resyncVault();
+  });
+
   // Try to restore previous session (avoid re-login)
   await tryRestoreSession();
 });
@@ -2276,7 +2285,7 @@ function setupTrashBatchButtons() {
     showTrashRestoreModal();
   });
 
-  // Permanent delete
+  // Permanent delete — 悲观模式：不可逆操作先 API 成功再更新 UI
   $('#trash-perm-delete-btn')?.addEventListener('click', () => {
     if (selectedItems.size === 0) return;
     showConfirm(
@@ -2285,21 +2294,17 @@ function setupTrashBatchButtons() {
       async () => {
         try {
           const ids = Array.from(selectedItems);
-          const deleteSet = new Set(ids);
 
-          // Optimistic UI
-          allDecryptedTrash = allDecryptedTrash.filter(c => !deleteSet.has(c.id));
-          selectedItems.clear();
-          updateTrashBatchBar();
-          updateSidebarBadges();
-          renderTrashView();
-          showToast(`✅ 已永久删除 ${ids.length} 个条目`, 'success');
-
-          // Server-side
+          // Server-side first (pessimistic: confirm deletion before UI update)
           for (let i = 0; i < ids.length; i += 100) {
             await client.permanentDeleteBulk(ids.slice(i, i + 100));
           }
-          resyncVault();
+
+          // Only update UI after API success
+          showToast(`✅ 已永久删除 ${ids.length} 个条目`, 'success');
+          selectedItems.clear();
+          updateTrashBatchBar();
+          await resyncVault();
         } catch (err) {
           showToast(`❌ 永久删除失败: ${err.message}`, 'error');
           resyncVault();
@@ -2478,10 +2483,14 @@ async function handleMerge(groups) {
           });
         }
 
-        // Execute updates (merge path)
+        // Execute updates (merge path) — 先写后删：更新必须成功才允许删除关联条目
         let updateFails = 0;
-        for (const op of operations.toUpdate) {
+        const failedKeepIds = new Set(); // 记录更新失败的 keepItem ID
+        for (let idx = 0; idx < operations.toUpdate.length; idx++) {
+          const op = operations.toUpdate[idx];
           try {
+            mergeBtn.textContent = `合并中 ${idx + 1}/${operations.toUpdate.length}...`;
+
             // Smart title: re-encrypt new title if needed
             if (op.titleOverride) {
               const encTitle = await encryptString(op.titleOverride, symmetricKey);
@@ -2507,14 +2516,26 @@ async function handleMerge(groups) {
           } catch (err) {
             console.error(`[Merge] updateCipher ${op.id} failed:`, err);
             updateFails++;
-            showToast(`⚠️ 合并更新失败 (${err.message})，已跳过`, 'warning');
+            failedKeepIds.add(op.id);
+            showToast(`⚠️ 合并更新失败 (${err.message})，已跳过该组`, 'warning');
           }
         }
 
-        // Execute deletes (both pure delete + post-merge)
-        if (operations.toDelete.length > 0) {
-          for (let i = 0; i < operations.toDelete.length; i += 100) {
-            await client.softDeleteBulk(operations.toDelete.slice(i, i + 100));
+        // Execute deletes — 严格先写后删：跳过更新失败组的关联删除
+        // 构建 failedGroupDeleteIds：更新失败的组，其 removeItems 也不应删除
+        const failedGroupDeleteIds = new Set();
+        if (failedKeepIds.size > 0) {
+          for (const group of allGroups) {
+            if (failedKeepIds.has(group.keepItem?.id)) {
+              group.items.filter(i => i.id !== group.keepItem.id).forEach(i => failedGroupDeleteIds.add(i.id));
+            }
+          }
+        }
+        const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
+        if (safeToDelete.length > 0) {
+          mergeBtn.textContent = '清理中...';
+          for (let i = 0; i < safeToDelete.length; i += 100) {
+            await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
           }
         }
 
