@@ -2888,7 +2888,7 @@ async function checkDeadUrls() {
    * Returns true if domain is alive.
    */
   async function isDomainAlive(domain) {
-    const TIMEOUT = 6000;
+    const TIMEOUT = 3000;
 
     // Strategy 1: fetch with no-cors (works for most sites)
     const fetchProbe = (async () => {
