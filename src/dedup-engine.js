@@ -283,14 +283,15 @@ function sortByQuality(items) {
 /**
  * Build merge operations from selected groups
  * Uses _original as base for encrypted-layer merge
- * Returns { toUpdate: [...], toDelete: [...], errors: [...] }
- * Each toUpdate item has: { id, data, titleOverride?, notesAppend? }
- *   titleOverride: new decrypted title string (needs re-encryption)
- *   notesAppend: text to append to decrypted notes (needs re-encryption)
+ * Returns { toCreate: [...], toDelete: [...], errors: [...] }
+ *
+ * toCreate has two formats:
+ *   1. Normal (isPasskeyMerge=false): decrypted plaintext fields
+ *   2. Passkey (isPasskeyMerge=true): merged encrypted _original + passkey data
+ *      Execution layer converts to Create-Then-Delete (same as single-item edit save)
  */
 export function buildMergeOperations(selectedGroups) {
-  const toCreate = [];  // Path B: new items to create (decrypted plaintext)
-  const toUpdate = [];  // Path C: passkey items to update (encrypted _original)
+  const toCreate = [];  // Path B: items to create (plaintext or passkey-merge)
   const toDelete = [];  // IDs to soft-delete
   const errors = [];
 
@@ -311,15 +312,15 @@ export function buildMergeOperations(selectedGroups) {
     );
 
     if (hasPasskeys) {
-      // === Path C: Update passkey item (keep passkey holder, merge others into it) ===
-      buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, toDelete, errors);
+      // === Path B (Passkey): Merge data then Create-Then-Delete ===
+      buildPasskeyMerge_CreateThenDelete(group, keepItem, removeItems, toCreate, toDelete, errors);
     } else {
-      // === Path B: Create-Then-Delete (no passkeys, safe to create new) ===
+      // === Path B (Normal): Create-Then-Delete ===
       buildPathB_CreateThenDelete(group, keepItem, removeItems, toCreate, toDelete, errors);
     }
   }
 
-  return { toCreate, toUpdate, toDelete, errors };
+  return { toCreate, toDelete, errors };
 }
 
 /**
@@ -417,10 +418,21 @@ function buildPathB_CreateThenDelete(group, keepItem, removeItems, toCreate, toD
 }
 
 /**
- * Path C: Merge data into the passkey-holding item via updateCipher.
- * The passkey item MUST be preserved (passkeys are tied to cipher Key).
+ * Passkey Merge: Merge data into the passkey-holding item's _original,
+ * then output as a Create-Then-Delete operation.
+ *
+ * Data merge logic preserved:
+ *   1. 确定保留项 (keepItem = passkey holder, via sortByQuality)
+ *   2. 基底数据 (deep copy keepItem._original)
+ *   3. 逐个遍历 removeItems, merge URIs/TOTP/Fields/Notes/Favorite/Reprompt
+ *   4. 标题智能选择 (chooseBestTitle)
+ *   5. 输出 → toCreate with isPasskeyMerge=true (Create-Then-Delete)
+ *
+ * The passkey item cannot be updated via PUT (per-cipher Key causes API failure),
+ * so we create a brand new cipher carrying the per-cipher Key + Fido2Credentials,
+ * then delete ALL original items.
  */
-function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, toDelete, errors) {
+function buildPasskeyMerge_CreateThenDelete(group, keepItem, removeItems, toCreate, toDelete, errors) {
   const base = keepItem.raw?._original;
   if (!base) {
     errors.push({
@@ -431,7 +443,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
     return;
   }
 
-  let needsUpdate = false;
+  let needsMerge = false;
   const updatedCipher = JSON.parse(JSON.stringify(base));
   const keepLogin = updatedCipher.Login || updatedCipher.login;
 
@@ -445,11 +457,11 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
     const { chosen, discarded } = chooseBestTitle(uniqueNames);
     if (chosen !== keepItem.decrypted?.name) {
       titleOverride = chosen;
-      needsUpdate = true;
+      needsMerge = true;
     }
     if (discarded.length > 0) {
       notesAppend = `\n合并前的其他标题: ${discarded.join(', ')}`;
-      needsUpdate = true;
+      needsMerge = true;
     }
   }
 
@@ -466,7 +478,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
         const merged = [...existingUris, ...newUris];
         if (keepLogin.Uris !== undefined) keepLogin.Uris = merged;
         if (keepLogin.uris !== undefined) keepLogin.uris = merged;
-        needsUpdate = true;
+        needsMerge = true;
       }
     }
 
@@ -477,7 +489,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
       if (!keepTotp && removeTotp) {
         if (keepLogin.Totp !== undefined) keepLogin.Totp = removeTotp;
         if (keepLogin.totp !== undefined) keepLogin.totp = removeTotp;
-        needsUpdate = true;
+        needsMerge = true;
       }
     }
 
@@ -491,7 +503,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
         const merged = [...existingFields, ...newFields];
         updatedCipher.Fields = merged;
         if (updatedCipher.fields !== undefined) updatedCipher.fields = merged;
-        needsUpdate = true;
+        needsMerge = true;
       }
     }
 
@@ -501,7 +513,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
     if (removeNotes && (!keepNotes || removeNotes.length > keepNotes.length)) {
       updatedCipher.Notes = removeNotes;
       if (updatedCipher.notes !== undefined) updatedCipher.notes = removeNotes;
-      needsUpdate = true;
+      needsMerge = true;
     }
 
     // 5. Merge Favorite
@@ -509,7 +521,7 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
     if (removeFav && !(updatedCipher.Favorite || updatedCipher.favorite)) {
       updatedCipher.Favorite = true;
       if (updatedCipher.favorite !== undefined) updatedCipher.favorite = true;
-      needsUpdate = true;
+      needsMerge = true;
     }
 
     // 6. Merge Reprompt
@@ -518,34 +530,49 @@ function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, to
     if (removeReprompt === 1 && keepReprompt !== 1) {
       updatedCipher.Reprompt = 1;
       if (updatedCipher.reprompt !== undefined) updatedCipher.reprompt = 1;
-      needsUpdate = true;
+      needsMerge = true;
     }
   }
 
-  if (needsUpdate) {
-    if (keepLogin) {
-      updatedCipher.Login = keepLogin;
-      if (updatedCipher.login !== undefined) updatedCipher.login = keepLogin;
-    }
-
-    if (!updatedCipher.Name && !updatedCipher.name) {
-      errors.push({
-        groupLabel: group.label,
-        reason: '合并后缺少 Name 字段，跳过更新',
-      });
-    } else {
-      toUpdate.push({
-        id: keepItem.id,
-        data: updatedCipher,
-        titleOverride,
-        notesAppend,
-        uriOptimizations: null,  // Path C doesn't do URI optimization (encrypted data)
-      });
-    }
+  // Finalize Login object
+  if (keepLogin) {
+    updatedCipher.Login = keepLogin;
+    if (updatedCipher.login !== undefined) updatedCipher.login = keepLogin;
   }
 
-  // Delete remove items (NOT keepItem — it holds the passkeys)
-  for (const item of removeItems) {
+  if (!updatedCipher.Name && !updatedCipher.name) {
+    errors.push({
+      groupLabel: group.label,
+      reason: '合并后缺少 Name 字段，跳过',
+    });
+    return;
+  }
+
+  // Extract passkey data from keepItem (passkey holder)
+  const cipherKey = keepItem.raw?.Key || keepItem.raw?.key
+    || keepItem.raw?._original?.Key || keepItem.raw?._original?.key || null;
+  const origLogin = keepItem.raw?._original?.Login || keepItem.raw?._original?.login || {};
+  const fido2Credentials = origLogin.Fido2Credentials || origLogin.fido2Credentials || [];
+
+  toCreate.push({
+    groupLabel: group.label,
+    // === Passkey merge flag ===
+    isPasskeyMerge: true,
+    // Merged encrypted _original data (same structure as API response)
+    mergedOriginal: updatedCipher,
+    // Per-cipher encryption key (encrypted string, pass-through)
+    cipherKey,
+    // Fido2 credentials (encrypted, pass-through from keepItem)
+    fido2Credentials,
+    // Plaintext overrides (execution layer will encrypt with per-cipher key)
+    titleOverride,
+    notesAppend,
+    // Password history from all items
+    passwordHistory: collectPasswordHistory(group.items),
+  });
+
+  // Delete ALL items (including keepItem — we're creating a brand new cipher)
+  for (const item of group.items) {
     toDelete.push(item.id);
   }
 }

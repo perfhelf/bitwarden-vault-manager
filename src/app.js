@@ -4515,7 +4515,7 @@ async function handleMerge(groups) {
 
       try {
         const operations = buildMergeOperations(allGroups);
-        const totalSteps = (operations.toCreate?.length || 0) + operations.toUpdate.length + (operations.toDelete.length > 0 ? 1 : 0);
+        const totalSteps = (operations.toCreate?.length || 0) + (operations.toDelete.length > 0 ? 1 : 0);
         let completedSteps = 0;
 
         // Engine-level errors
@@ -4525,18 +4525,22 @@ async function handleMerge(groups) {
           }
         }
 
-        // === Path B: Create new merged items (encrypt → POST → verify) ===
+        // === Path B: Create new merged items (normal + passkey) ===
         const createdIds = []; // Track successfully created item IDs
         const failedCreateGroupLabels = new Set();
         for (let idx = 0; idx < (operations.toCreate?.length || 0); idx++) {
           const op = operations.toCreate[idx];
           completedSteps++;
           const pct = Math.round((completedSteps / totalSteps) * 100);
-          updateMergeProgress(pct, `新建合并条目 ${idx + 1}/${operations.toCreate.length}...`);
+          const label = op.isPasskeyMerge ? '通行密钥合并' : '新建合并条目';
+          updateMergeProgress(pct, `${label} ${idx + 1}/${operations.toCreate.length}...`);
 
           try {
-            const payload = await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
-            console.log('[Merge] Path B createCipher:', op.groupLabel);
+            // Use passkey-specific payload builder for passkey merges
+            const payload = op.isPasskeyMerge
+              ? await buildPasskeyMergePayload(op, isDemoMode, symmetricKey)
+              : await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
+            console.log(`[Merge] ${op.isPasskeyMerge ? 'Passkey' : 'Path B'} createCipher:`, op.groupLabel);
             const result = await client.createCipher(payload);
             const newId = result.id || result.Id;
             if (!newId) throw new Error('创建成功但未返回ID');
@@ -4547,66 +4551,13 @@ async function handleMerge(groups) {
             failedCreateGroupLabels.add(op.groupLabel);
             failures.push({
               label: op.groupLabel,
-              reason: `新建合并条目失败: ${err.message}`,
+              reason: `${op.isPasskeyMerge ? '通行密钥' : ''}合并条目创建失败: ${err.message}`,
             });
           }
         }
 
-        // === Path C: Update passkey items (existing updateCipher logic) ===
-        const failedKeepIds = new Set();
-        for (let idx = 0; idx < operations.toUpdate.length; idx++) {
-          const op = operations.toUpdate[idx];
-          completedSteps++;
-          const pct = Math.round((completedSteps / totalSteps) * 100);
-          updateMergeProgress(pct, `更新通行密钥条目 ${idx + 1}/${operations.toUpdate.length}...`);
-
-          try {
-            if (op.titleOverride) {
-              if (isDemoMode) {
-                op.data.Name = op.titleOverride;
-                if (op.data.name !== undefined) op.data.name = op.titleOverride;
-              } else {
-                const encTitle = await encryptString(op.titleOverride, symmetricKey);
-                op.data.Name = encTitle;
-                if (op.data.name !== undefined) op.data.name = encTitle;
-              }
-            }
-            if (op.notesAppend) {
-              if (isDemoMode) {
-                const currentNotes = op.data.Notes || op.data.notes || '';
-                const merged = currentNotes + op.notesAppend;
-                op.data.Notes = merged;
-                if (op.data.notes !== undefined) op.data.notes = merged;
-              } else {
-                const currentEncNotes = op.data.Notes || op.data.notes || '';
-                let plain = '';
-                if (currentEncNotes) {
-                  try { plain = await decryptToString(currentEncNotes, symmetricKey) || ''; }
-                  catch { plain = ''; }
-                }
-                const merged = plain + op.notesAppend;
-                const encNotes = await encryptString(merged, symmetricKey);
-                op.data.Notes = encNotes;
-                if (op.data.notes !== undefined) op.data.notes = encNotes;
-              }
-            }
-
-            const updateResult = await client.updateCipher(op.id, op.data);
-            successGroups++;
-          } catch (err) {
-            console.error(`[Merge] updateCipher ${op.id} failed:`, err);
-            failedKeepIds.add(op.id);
-            const matchGroup = allGroups.find(g => g.keepItem?.id === op.id);
-            failures.push({
-              label: matchGroup?.label || op.id,
-              reason: `通行密钥条目更新失败: ${err.message}`,
-            });
-          }
-        }
-
-        // === Delete: only items from successful create/update groups ===
-        // For Path B failed creates: DO NOT delete original items (they're still needed)
-        // For Path C failed updates: still delete duplicates (keepItem stays as-is)
+        // === Delete: only items from successful create groups ===
+        // For failed creates: DO NOT delete original items (they're still needed)
         let safeToDelete = operations.toDelete;
         if (failedCreateGroupLabels.size > 0) {
           // Remove IDs belonging to failed-create groups from deletion list
@@ -4736,6 +4687,147 @@ async function buildCipherCreatePayload(op, isDemoMode, symKey) {
 }
 
 /**
+ * Build a POST /ciphers payload for passkey-merge items.
+ * Mirrors saveEditedCipher's Create-Then-Delete strategy exactly.
+ * Takes merged encrypted _original and builds a camelCase create payload
+ * with per-cipher Key + Fido2Credentials.
+ */
+async function buildPasskeyMergePayload(op, isDemoMode, symKey) {
+  const src = op.mergedOriginal;  // Merged encrypted _original
+  const g = (obj, ...keys) => { for (const k of keys) { if (obj && obj[k] != null) return obj[k]; } return null; };
+
+  // Determine the per-cipher encryption key
+  let encKey = symKey;
+  if (!isDemoMode && op.cipherKey) {
+    try {
+      encKey = await decryptSymmetricKey(op.cipherKey, symKey);
+      console.log('[Merge] Using per-cipher key for passkey merge encryption');
+    } catch (err) {
+      console.warn('[Merge] Failed to decrypt per-cipher Key, falling back to master key:', err.message);
+    }
+  }
+
+  // Handle titleOverride: re-encrypt with per-cipher key
+  if (op.titleOverride) {
+    if (isDemoMode) {
+      src.Name = op.titleOverride;
+      if (src.name !== undefined) src.name = op.titleOverride;
+    } else {
+      const encTitle = await encryptString(op.titleOverride, encKey);
+      src.Name = encTitle;
+      if (src.name !== undefined) src.name = encTitle;
+    }
+  }
+
+  // Handle notesAppend: decrypt current → append → re-encrypt with per-cipher key
+  if (op.notesAppend) {
+    if (isDemoMode) {
+      const currentNotes = src.Notes || src.notes || '';
+      const merged = currentNotes + op.notesAppend;
+      src.Notes = merged;
+      if (src.notes !== undefined) src.notes = merged;
+    } else {
+      const currentEncNotes = src.Notes || src.notes || '';
+      let plain = '';
+      if (currentEncNotes) {
+        try { plain = await decryptToString(currentEncNotes, encKey) || ''; }
+        catch { plain = ''; }
+      }
+      const merged = plain + op.notesAppend;
+      const encNotes = await encryptString(merged, encKey);
+      src.Notes = encNotes;
+      if (src.notes !== undefined) src.notes = encNotes;
+    }
+  }
+
+  // Build camelCase create payload (same structure as saveEditedCipher)
+  const payload = {
+    type: src.Type ?? src.type ?? 1,
+    organizationId: g(src, 'OrganizationId', 'organizationId') || null,
+    folderId: g(src, 'FolderId', 'folderId') || null,
+    name: g(src, 'Name', 'name'),
+    notes: g(src, 'Notes', 'notes') || null,
+    favorite: src.Favorite ?? src.favorite ?? false,
+    reprompt: src.Reprompt ?? src.reprompt ?? 0,
+    key: op.cipherKey,  // Per-cipher Key (pass-through)
+  };
+
+  // Login
+  const srcLogin = src.Login || src.login;
+  if (srcLogin) {
+    const login = {
+      username: g(srcLogin, 'Username', 'username') || null,
+      password: g(srcLogin, 'Password', 'password') || null,
+      passwordRevisionDate: g(srcLogin, 'PasswordRevisionDate', 'passwordRevisionDate') || null,
+      totp: g(srcLogin, 'Totp', 'totp') || null,
+      autofillOnPageLoad: g(srcLogin, 'AutofillOnPageLoad', 'autofillOnPageLoad') || null,
+    };
+
+    // URIs
+    const uris = g(srcLogin, 'Uris', 'uris') || [];
+    login.uris = uris.map(u => {
+      const uriObj = {
+        uri: g(u, 'Uri', 'uri') || null,
+        match: u.Match ?? u.match ?? null,
+      };
+      const checksum = g(u, 'UriChecksum', 'uriChecksum');
+      if (checksum) uriObj.uriChecksum = checksum;
+      return uriObj;
+    });
+
+    // Fido2 credentials (from dedup-engine output)
+    if (op.fido2Credentials && op.fido2Credentials.length > 0) {
+      login.fido2Credentials = op.fido2Credentials.map(k => ({
+        credentialId: g(k, 'CredentialId', 'credentialId') || null,
+        keyType: g(k, 'KeyType', 'keyType') || null,
+        keyAlgorithm: g(k, 'KeyAlgorithm', 'keyAlgorithm') || null,
+        keyCurve: g(k, 'KeyCurve', 'keyCurve') || null,
+        keyValue: g(k, 'KeyValue', 'keyValue') || null,
+        rpId: g(k, 'RpId', 'rpId') || null,
+        rpName: g(k, 'RpName', 'rpName') || null,
+        counter: g(k, 'Counter', 'counter') || null,
+        userHandle: g(k, 'UserHandle', 'userHandle') || null,
+        userName: g(k, 'UserName', 'userName') || null,
+        userDisplayName: g(k, 'UserDisplayName', 'userDisplayName') || null,
+        discoverable: g(k, 'Discoverable', 'discoverable') || null,
+        creationDate: g(k, 'CreationDate', 'creationDate') || null,
+      }));
+    }
+
+    payload.login = login;
+  }
+
+  // Fields
+  const fields = src.Fields || src.fields;
+  if (fields && fields.length > 0) {
+    payload.fields = fields.map(f => ({
+      type: f.Type ?? f.type ?? 0,
+      name: g(f, 'Name', 'name') || null,
+      value: g(f, 'Value', 'value') || null,
+      linkedId: f.LinkedId ?? f.linkedId ?? null,
+    }));
+  } else {
+    payload.fields = null;
+  }
+
+  // Other types — null for login
+  payload.secureNote = null;
+  payload.card = null;
+  payload.identity = null;
+  payload.sshKey = null;
+
+  // Password history
+  if (op.passwordHistory && op.passwordHistory.length > 0) {
+    payload.passwordHistory = op.passwordHistory.map(ph => ({
+      lastUsedDate: ph.LastUsedDate || ph.lastUsedDate || null,
+      password: ph.Password || ph.password || null,
+    }));
+  }
+
+  return payload;
+}
+
+/**
  * Handle single card merge — merge one exact group
  */
 async function handleSingleMerge(groups, gi, btnEl) {
@@ -4800,7 +4892,6 @@ async function handleSingleMerge(groups, gi, btnEl) {
     // === DEBUG ===
     console.group('[SingleMerge] buildMergeOperations result');
     console.log('toCreate count:', operations.toCreate?.length || 0);
-    console.log('toUpdate count:', operations.toUpdate.length);
     console.log('toDelete count:', operations.toDelete.length);
     console.log('errors:', operations.errors);
     console.groupEnd();
@@ -4811,12 +4902,15 @@ async function handleSingleMerge(groups, gi, btnEl) {
       });
     }
 
-    // === Path B: Create new merged item ===
+    // === Create merged items (normal + passkey) ===
     let createSuccess = true;
     for (const op of (operations.toCreate || [])) {
       try {
-        const payload = await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
-        console.log('[SingleMerge] Path B createCipher:', op.groupLabel);
+        // Use passkey-specific payload builder for passkey merges
+        const payload = op.isPasskeyMerge
+          ? await buildPasskeyMergePayload(op, isDemoMode, symmetricKey)
+          : await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
+        console.log(`[SingleMerge] ${op.isPasskeyMerge ? 'Passkey' : 'Path B'} createCipher:`, op.groupLabel);
         const result = await client.createCipher(payload);
         const newId = result.id || result.Id;
         if (!newId) throw new Error('创建成功但未返回ID');
@@ -4824,55 +4918,14 @@ async function handleSingleMerge(groups, gi, btnEl) {
       } catch (err) {
         console.error('[SingleMerge] createCipher failed:', err);
         createSuccess = false;
-        showToast(`❌ 新建合并条目失败: ${err.message}`, 'error');
+        showToast(`❌ ${op.isPasskeyMerge ? '通行密钥' : ''}合并条目创建失败: ${err.message}`, 'error');
       }
     }
 
-    // === Path C: Update passkey item ===
-    let updateFails = 0;
-    for (const op of operations.toUpdate) {
-      try {
-        if (op.titleOverride) {
-          if (isDemoMode) {
-            op.data.Name = op.titleOverride;
-            if (op.data.name !== undefined) op.data.name = op.titleOverride;
-          } else {
-            const encTitle = await encryptString(op.titleOverride, symmetricKey);
-            op.data.Name = encTitle;
-            if (op.data.name !== undefined) op.data.name = encTitle;
-          }
-        }
-        if (op.notesAppend) {
-          if (isDemoMode) {
-            const currentNotes = op.data.Notes || op.data.notes || '';
-            const merged = currentNotes + op.notesAppend;
-            op.data.Notes = merged;
-            if (op.data.notes !== undefined) op.data.notes = merged;
-          } else {
-            const currentEncNotes = op.data.Notes || op.data.notes || '';
-            let plain = '';
-            if (currentEncNotes) {
-              try { plain = await decryptToString(currentEncNotes, symmetricKey) || ''; }
-              catch { plain = ''; }
-            }
-            const merged = plain + op.notesAppend;
-            const encNotes = await encryptString(merged, symmetricKey);
-            op.data.Notes = encNotes;
-            if (op.data.notes !== undefined) op.data.notes = encNotes;
-          }
-        }
-        await client.updateCipher(op.id, op.data);
-      } catch (err) {
-        console.error('[SingleMerge] updateCipher failed:', err);
-        updateFails++;
-        showToast(`⚠️ 通行密钥条目更新失败 (${err.message})`, 'warning');
-      }
-    }
-
-    // === Delete: only if Path B succeeded (Path C failures still allow delete) ===
+    // === Delete: only if create succeeded ===
     let safeToDelete = operations.toDelete;
     if (!createSuccess && (operations.toCreate?.length || 0) > 0) {
-      // Path B failed — do NOT delete originals
+      // Create failed — do NOT delete originals
       safeToDelete = [];
       showToast('⛔ 新建失败，原条目未删除', 'error');
     }
@@ -4892,10 +4945,10 @@ async function handleSingleMerge(groups, gi, btnEl) {
     renderFolderList();
     switchView(currentView);
 
-    if (createSuccess && updateFails === 0) {
+    if (createSuccess) {
       showToast(`✅ ${escHtml(group.label)} 合并完成`, 'success');
     } else {
-      showToast(`⚠️ ${escHtml(group.label)} 重复项已删除，但部分数据未合并（条目不可编辑）`, 'warning');
+      showToast(`⚠️ ${escHtml(group.label)} 合并失败`, 'warning');
     }
 
     // Background resync for real mode consistency
