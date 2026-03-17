@@ -574,8 +574,8 @@ function collectPasswordHistory(allItems) {
 function simplifyUrl(url) {
   try {
     const u = new URL(url);
-    // Strip common non-differentiating subdomains for a canonical origin
-    const cleanHost = u.hostname.replace(/^(www|m|mobile|touch|wap|lite)\./, '');
+    // Use registered domain for a canonical origin
+    const cleanHost = getRegisteredDomain(u.hostname.toLowerCase());
     return `${u.protocol}//${cleanHost}`;
   } catch {
     return url;
@@ -631,6 +631,53 @@ function getPrimaryUri(cipher) {
   return '';
 }
 
+/**
+ * Known multi-part TLDs (eTLD list subset).
+ * For hostnames ending in these, the registered domain is the part before + the TLD.
+ * e.g., "shop.example.co.uk" → "example.co.uk"
+ */
+const MULTI_PART_TLDS = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au',
+  'co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'go.jp',
+  'co.kr', 'or.kr', 'ne.kr',
+  'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+  'com.tw', 'org.tw', 'net.tw', 'edu.tw',
+  'com.hk', 'org.hk', 'net.hk', 'edu.hk', 'gov.hk',
+  'co.nz', 'net.nz', 'org.nz',
+  'com.br', 'org.br', 'net.br',
+  'com.mx', 'org.mx', 'net.mx',
+  'co.in', 'net.in', 'org.in',
+  'com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg',
+  'co.za', 'org.za', 'net.za',
+  'co.il', 'org.il', 'net.il',
+  'com.tr', 'org.tr', 'net.tr',
+  'co.th', 'or.th', 'ac.th',
+  'com.vn', 'net.vn', 'org.vn',
+  'com.ar', 'org.ar', 'net.ar',
+]);
+
+/**
+ * Extract registered domain (eTLD+1) from a hostname.
+ * "pan.baidu.com" → "baidu.com"
+ * "shop.example.co.uk" → "example.co.uk"
+ * "baidu.com" → "baidu.com"  (already a base domain)
+ */
+function getRegisteredDomain(hostname) {
+  const parts = hostname.split('.');
+  if (parts.length <= 2) return hostname; // already base domain or single-label
+
+  // Check if the last two parts form a known multi-part TLD
+  const lastTwo = parts.slice(-2).join('.');
+  if (MULTI_PART_TLDS.has(lastTwo)) {
+    // Need 3 parts: "example.co.uk"
+    return parts.slice(-3).join('.');
+  }
+
+  // Standard TLD: take last 2 parts ("baidu.com")
+  return parts.slice(-2).join('.');
+}
+
 function normalizeUri(uri) {
   if (!uri) return '';
   try {
@@ -640,9 +687,9 @@ function normalizeUri(uri) {
       return appMatch[2].toLowerCase().split('/')[0].trim();
     }
     const u = new URL(uri.startsWith('http') ? uri : `https://${uri}`);
-    return u.hostname.replace(/^(www|m|mobile|touch|wap|lite)\./, '').toLowerCase();
+    return getRegisteredDomain(u.hostname.toLowerCase());
   } catch {
-    return uri.toLowerCase().replace(/^(www|m|mobile|touch|wap|lite)\./, '').trim();
+    return uri.toLowerCase().trim();
   }
 }
 

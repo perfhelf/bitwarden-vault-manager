@@ -86,14 +86,6 @@
   border-color: var(--brand);
   background: rgba(23,93,220,0.04);
 }
-[data-theme="light"] .drop-text { color: rgba(0,0,0,0.55); }
-[data-theme="light"] .drop-or { color: rgba(0,0,0,0.35); }
-[data-theme="light"] .credfile-desc { color: rgba(0,0,0,0.55); }
-[data-theme="light"] .credfile-security {
-  background: rgba(255,165,0,0.06);
-  border-color: rgba(255,165,0,0.2);
-  color: rgba(180,100,0,0.85);
-}
 
 /* === Global Controls (language / theme toggle) === */
 .global-controls {
@@ -701,8 +693,8 @@ body {
   transform: scale(1.01);
 }
 .drop-icon { font-size: 2.5rem; margin-bottom: 10px; line-height: 1; }
-.drop-text { color: rgba(255,255,255,0.7); font-size: 0.95rem; }
-.drop-or { color: rgba(255,255,255,0.4); font-size: 0.85rem; margin: 10px 0; }
+.drop-text { color: var(--text-secondary); font-size: 0.95rem; }
+.drop-or { color: var(--text-muted); font-size: 0.85rem; margin: 10px 0; }
 .drop-browse-btn {
   background: var(--accent);
   color: white;
@@ -718,13 +710,13 @@ body {
 /* --- Credential File Generation View --- */
 .credfile-view { max-width: 560px; margin: 0 auto; }
 .credfile-desc {
-  color: rgba(255,255,255,0.6);
+  color: var(--text-secondary);
   font-size: 0.9rem;
   line-height: 1.6;
   margin-bottom: 24px;
 }
 .credfile-desc code {
-  background: rgba(255,255,255,0.1);
+  background: var(--bg-card-hover);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.85em;
@@ -733,10 +725,10 @@ body {
 .credfile-security {
   margin-top: 20px;
   padding: 12px 16px;
-  background: rgba(255,165,0,0.08);
-  border: 1px solid rgba(255,165,0,0.25);
+  background: var(--warn-bg);
+  border: 1px solid rgba(245, 158, 11, 0.25);
   border-radius: 8px;
-  color: rgba(255,200,100,0.85);
+  color: var(--warn);
   font-size: 0.85rem;
 }
 
@@ -1519,17 +1511,13 @@ body {
   transition: all var(--transition);
 }
 .merge-bar-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-card-hover);
   border-color: var(--brand);
 }
 .merge-bar-btn-danger:hover {
-  background: #fef2f2;
-  border-color: #ef4444;
-  color: #dc2626;
-}
-[data-theme="dark"] .merge-bar-btn-danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #fca5a5;
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .site-merge-btn {
@@ -2519,7 +2507,7 @@ body {
 .merge-progress-bar-container {
   width: 100%;
   height: 12px;
-  background: var(--bg-main, #1a1a2e);
+  background: var(--bg-input);
   border-radius: 6px;
   overflow: hidden;
   margin: 16px 0 12px;
@@ -2554,12 +2542,12 @@ body {
 }
 .merge-report-body .report-summary {
   padding: 12px 16px;
-  background: var(--bg-main, #1a1a2e);
+  background: var(--bg-input);
   border-radius: 8px;
   margin-bottom: 12px;
 }
-.merge-report-body .report-summary .success { color: #4ade80; }
-.merge-report-body .report-summary .fail { color: #f87171; }
+.merge-report-body .report-summary .success { color: var(--success); }
+.merge-report-body .report-summary .fail { color: var(--danger); }
 .merge-report-body .report-fail-list {
   list-style: none;
   padding: 0;
@@ -2600,7 +2588,7 @@ body {
 .detail-diag-btn:hover {
   border-color: var(--brand);
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: var(--bg-card-hover);
 }
 .detail-refetch-btn:hover {
   border-color: #4ade80;
@@ -2649,7 +2637,7 @@ body {
   border-radius: 6px;
 }
 .decrypt-log-close:hover {
-  background: var(--bg-hover);
+  background: var(--bg-card-hover);
   color: var(--text-primary);
 }
 .decrypt-log-summary {
@@ -2660,10 +2648,10 @@ body {
   font-size: 0.82rem;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
-  background: var(--bg-main);
+  background: var(--bg-input);
 }
 .decrypt-log-summary code {
-  background: var(--bg-hover);
+  background: var(--bg-card-hover);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 0.78rem;
@@ -2680,7 +2668,7 @@ body {
 .decrypt-log-table th {
   text-align: left;
   padding: 8px 12px;
-  background: var(--bg-main);
+  background: var(--bg-input);
   color: var(--text-secondary);
   font-weight: 600;
   position: sticky;
@@ -2728,7 +2716,7 @@ body {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--brand-light, #93b4f5);
-  background: var(--bg-main, #0d0d1a);
+  background: var(--bg-input);
   border-bottom: 1px solid var(--border);
   border-left: 3px solid var(--brand, #175DDC);
   letter-spacing: 1.5px;
@@ -2776,7 +2764,7 @@ body {
 
 .az-index-letter:hover {
   color: var(--brand-light, #93b4f5);
-  background: var(--bg-hover, rgba(255,255,255,0.06));
+  background: var(--bg-card-hover);
   transform: scale(1.15);
 }
 
