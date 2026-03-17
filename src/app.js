@@ -3323,16 +3323,9 @@ async function handleMerge(groups) {
           }
         }
 
-        // Execute deletes — skip items from failed groups
-        const failedGroupDeleteIds = new Set();
-        if (failedKeepIds.size > 0) {
-          for (const group of allGroups) {
-            if (failedKeepIds.has(group.keepItem?.id)) {
-              group.items.filter(i => i.id !== group.keepItem.id).forEach(i => failedGroupDeleteIds.add(i.id));
-            }
-          }
-        }
-        const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
+        // Execute deletes — ALWAYS proceed even if update failed
+        // When update fails, keepItem stays as-is, but duplicates should still be removed
+        const safeToDelete = operations.toDelete;
         if (safeToDelete.length > 0) {
           updateMergeProgress(95, `清理 ${safeToDelete.length} 个重复条目...`);
           try {
@@ -3536,12 +3529,9 @@ async function handleSingleMerge(groups, gi, btnEl) {
       }
     }
 
-    // Execute deletes — skip failed groups
-    const failedGroupDeleteIds = new Set();
-    if (failedKeepIds.size > 0) {
-      mergeGroup.items.filter(i => i.id !== mergeGroup.keepItem.id).forEach(i => failedGroupDeleteIds.add(i.id));
-    }
-    const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
+    // Execute deletes — ALWAYS proceed even if update failed
+    // When update fails, keepItem stays as-is, but duplicates should still be removed
+    const safeToDelete = operations.toDelete;
     if (safeToDelete.length > 0) {
       console.log(`[SingleMerge DEBUG] calling softDeleteBulk, count: ${safeToDelete.length}, IDs:`, safeToDelete);
       for (let i = 0; i < safeToDelete.length; i += 100) {
@@ -3550,19 +3540,19 @@ async function handleSingleMerge(groups, gi, btnEl) {
       console.log('[SingleMerge DEBUG] softDeleteBulk completed');
     }
 
+    // Optimistic UI update — remove deleted items from memory and re-render
+    const deleteSet = new Set(safeToDelete);
+    allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+    analysisResult = analyzeCiphers(allDecryptedCiphers);
+    healthResult = analyzeHealth(allDecryptedCiphers);
+    updateSidebarBadges();
+    renderFolderList();
+    switchView(currentView);
+
     if (updateFails === 0) {
       showToast(`✅ ${escHtml(group.label)} 合并完成`, 'success');
-
-      // Optimistic UI update — remove deleted items from memory and re-render
-      const deleteSet = new Set(safeToDelete);
-      allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
-      analysisResult = analyzeCiphers(allDecryptedCiphers);
-      healthResult = analyzeHealth(allDecryptedCiphers);
-      updateSidebarBadges();
-      renderFolderList();
-      switchView(currentView);
     } else {
-      showToast(`⚠️ ${escHtml(group.label)} 合并部分失败`, 'warning');
+      showToast(`⚠️ ${escHtml(group.label)} 重复项已删除，但部分数据未合并（条目不可编辑）`, 'warning');
     }
 
     // Background resync for real mode consistency
