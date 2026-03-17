@@ -2336,9 +2336,24 @@ async function decryptAllCiphers(syncData) {
     const logEntries = []; // Detailed per-field log
     logEntries.push({ field: '⏱ 时间', status: 'info', detail: new Date().toLocaleString('zh-CN') });
 
+    // Determine the correct decryption key for this cipher
+    // Items with a per-cipher Key (e.g. Passkey items) are encrypted with their own key
+    let itemKey = symmetricKey;
+    const cipherKeyStr = cipher.Key || cipher.key;
+    if (cipherKeyStr) {
+      try {
+        itemKey = await decryptSymmetricKey(cipherKeyStr, symmetricKey);
+        logEntries.push({ field: '🔑 Cipher Key', status: 'ok', detail: '已解密 per-cipher 密钥' });
+      } catch (err) {
+        console.debug('[Decrypt] Failed to decrypt per-cipher Key:', err.message);
+        logEntries.push({ field: '🔑 Cipher Key', status: 'fail', detail: `per-cipher 密钥解密失败: ${err.message}，回退到主密钥` });
+        // Fall back to master key — may still fail for individual fields
+      }
+    }
+
     // Decrypt each field independently — partial success is OK
-    const rawName = await decryptFieldWithRetry(cipher.Name, symmetricKey, 5, logEntries, '名称 (Name)');
-    const rawNotes = await decryptFieldWithRetry(cipher.Notes, symmetricKey, 5, logEntries, '备注 (Notes)');
+    const rawName = await decryptFieldWithRetry(cipher.Name, itemKey, 5, logEntries, '名称 (Name)');
+    const rawNotes = await decryptFieldWithRetry(cipher.Notes, itemKey, 5, logEntries, '备注 (Notes)');
 
     if (fieldFailed(rawName)) decryptErrors.push('name');
     if (fieldFailed(rawNotes)) decryptErrors.push('notes');
@@ -2359,9 +2374,9 @@ async function decryptAllCiphers(syncData) {
 
     // Login type
     if (cipher.Type === 1 && cipher.Login) {
-      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, symmetricKey, 5, logEntries, '用户名 (Username)');
-      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, symmetricKey, 5, logEntries, '密码 (Password)');
-      const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, symmetricKey, 5, logEntries, 'TOTP');
+      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, itemKey, 5, logEntries, '用户名 (Username)');
+      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, itemKey, 5, logEntries, '密码 (Password)');
+      const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, itemKey, 5, logEntries, 'TOTP');
 
       if (fieldFailed(rawUsername)) decryptErrors.push('username');
       if (fieldFailed(rawPassword)) decryptErrors.push('password');
@@ -2375,7 +2390,7 @@ async function decryptAllCiphers(syncData) {
       if (cipher.Login.Uris) {
         item.decrypted.uris = [];
         for (let i = 0; i < cipher.Login.Uris.length; i++) {
-          const rawUri = await decryptFieldWithRetry(cipher.Login.Uris[i].Uri, symmetricKey, 5, logEntries, `URI ${i + 1}`);
+          const rawUri = await decryptFieldWithRetry(cipher.Login.Uris[i].Uri, itemKey, 5, logEntries, `URI ${i + 1}`);
           if (fieldFailed(rawUri)) decryptErrors.push('uri');
           item.decrypted.uris.push(fieldValue(rawUri));
         }
@@ -2395,7 +2410,7 @@ async function decryptAllCiphers(syncData) {
       };
       item.decrypted.card = {};
       for (const [k, [label, val]] of Object.entries(cardFieldMap)) {
-        const rawVal = await decryptFieldWithRetry(val, symmetricKey, 5, logEntries, `卡片.${label}`);
+        const rawVal = await decryptFieldWithRetry(val, itemKey, 5, logEntries, `卡片.${label}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`card.${k}`);
         item.decrypted.card[k] = fieldValue(rawVal);
       }
@@ -2413,7 +2428,7 @@ async function decryptAllCiphers(syncData) {
       ];
       for (const field of identityFields) {
         const key = field.charAt(0).toLowerCase() + field.slice(1);
-        const rawVal = await decryptFieldWithRetry(id[field] || id[key], symmetricKey, 5, logEntries, `身份.${field}`);
+        const rawVal = await decryptFieldWithRetry(id[field] || id[key], itemKey, 5, logEntries, `身份.${field}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`identity.${key}`);
         item.decrypted.identity[key] = fieldValue(rawVal);
       }
@@ -2429,7 +2444,7 @@ async function decryptAllCiphers(syncData) {
         KeyFingerprint: 'keyFingerprint',
       };
       for (const [upper, lower] of Object.entries(sshFields)) {
-        const rawVal = await decryptFieldWithRetry(sk[upper] || sk[lower], symmetricKey, 5, logEntries, `SSH.${upper}`);
+        const rawVal = await decryptFieldWithRetry(sk[upper] || sk[lower], itemKey, 5, logEntries, `SSH.${upper}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`sshKey.${lower}`);
         item.decrypted.sshKey[lower] = fieldValue(rawVal);
       }
@@ -2440,8 +2455,8 @@ async function decryptAllCiphers(syncData) {
       item.decrypted.fields = [];
       for (let i = 0; i < cipher.Fields.length; i++) {
         const f = cipher.Fields[i];
-        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
-        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].值`);
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, itemKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, itemKey, 5, logEntries, `自定义字段[${i + 1}].值`);
         if (fieldFailed(rawFName)) decryptErrors.push('field.name');
         if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
         const fieldType = f.Type ?? f.type ?? 0;
@@ -2454,7 +2469,7 @@ async function decryptAllCiphers(syncData) {
       item.decrypted.passwordHistory = [];
       for (let i = 0; i < cipher.PasswordHistory.length; i++) {
         const ph = cipher.PasswordHistory[i];
-        const rawPw = await decryptFieldWithRetry(ph.Password || ph.password, symmetricKey, 5, logEntries, `密码历史[${i + 1}]`);
+        const rawPw = await decryptFieldWithRetry(ph.Password || ph.password, itemKey, 5, logEntries, `密码历史[${i + 1}]`);
         if (fieldFailed(rawPw)) decryptErrors.push('passwordHistory');
         item.decrypted.passwordHistory.push({
           password: fieldValue(rawPw),
