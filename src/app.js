@@ -1517,6 +1517,73 @@ function showToast(message, type = 'info') {
 }
 
 // ========================
+// MERGE PROGRESS & REPORT
+// ========================
+function showMergeProgress() {
+  const overlay = $('#merge-progress-overlay');
+  const bar = $('#merge-progress-bar');
+  const text = $('#merge-progress-text');
+  bar.style.width = '0%';
+  text.textContent = '准备中...';
+  overlay.style.display = 'flex';
+}
+
+function updateMergeProgress(pct, label) {
+  const bar = $('#merge-progress-bar');
+  const text = $('#merge-progress-text');
+  bar.style.width = `${Math.min(pct, 100)}%`;
+  text.textContent = `${pct}% — ${label}`;
+}
+
+function hideMergeProgress() {
+  const overlay = $('#merge-progress-overlay');
+  setTimeout(() => { overlay.style.display = 'none'; }, 300);
+}
+
+function showMergeReport(successGroups, successDeletes, failures) {
+  const modal = $('#merge-report-modal');
+  const title = $('#merge-report-title');
+  const body = $('#merge-report-body');
+  const closeBtn = $('#merge-report-close');
+
+  const hasFails = failures.length > 0;
+  title.textContent = hasFails ? '⚠️ 合并完成（部分失败）' : '✅ 合并全部成功';
+
+  let html = '<div class="report-summary">';
+  html += `<div><span class="success">✅ 成功合并:</span> ${successGroups} 组`;
+  if (successDeletes > 0) html += `，删除 ${successDeletes} 条`;
+  html += '</div>';
+  if (hasFails) {
+    html += `<div><span class="fail">❌ 失败:</span> ${failures.length} 项</div>`;
+  }
+  html += '</div>';
+
+  if (hasFails) {
+    html += '<ul class="report-fail-list">';
+    for (const f of failures) {
+      html += `<li>
+        <span class="fail-icon">❌</span>
+        <div class="fail-detail">
+          <div class="fail-label">${escapeHtml(f.label)}</div>
+          <div class="fail-reason">${escapeHtml(f.reason)}</div>
+        </div>
+      </li>`;
+    }
+    html += '</ul>';
+  }
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+  closeBtn.onclick = () => { modal.style.display = 'none'; };
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ========================
 // DECRYPT VAULT
 // ========================
 /**
@@ -2736,48 +2803,37 @@ async function handleMerge(groups) {
       isMergeLocked = true;
       mergeBtn.disabled = true;
       mergeBtn.textContent = '合并中...';
-      // Disable all single merge buttons
       updateMergeLockUI(true);
+
+      // Show progress overlay
+      showMergeProgress();
+
+      const failures = []; // [{label, reason}]
+      let successGroups = 0;
+      let successDeletes = 0;
 
       try {
         const operations = buildMergeOperations(allGroups);
+        const totalSteps = operations.toUpdate.length + (operations.toDelete.length > 0 ? 1 : 0);
+        let completedSteps = 0;
 
-        // === DEBUG: Log merge operations ===
-        console.group('[Merge DEBUG] buildMergeOperations result');
-        console.log('toUpdate count:', operations.toUpdate.length);
-        console.log('toDelete count:', operations.toDelete.length);
-        console.log('errors:', operations.errors);
-        operations.toUpdate.forEach((op, i) => {
-          console.group(`  toUpdate[${i}]: id=${op.id}`);
-          console.log('titleOverride:', op.titleOverride);
-          console.log('notesAppend:', op.notesAppend);
-          console.log('data keys:', Object.keys(op.data));
-          console.log('data.Type:', op.data.Type, 'data.type:', op.data.type);
-          console.log('data.Name (first 60):', String(op.data.Name || op.data.name || '').substring(0, 60));
-          console.log('data.Login keys:', op.data.Login ? Object.keys(op.data.Login) : op.data.login ? Object.keys(op.data.login) : 'no Login');
-          console.log('data sample:', JSON.stringify(op.data).substring(0, 500));
-          console.groupEnd();
-        });
-        console.log('toDelete IDs:', operations.toDelete);
-        console.groupEnd();
-
-        // Show warnings from merge engine
+        // Engine-level errors
         if (operations.errors && operations.errors.length > 0) {
-          console.warn('[Merge] Warnings:', operations.errors);
-          operations.errors.forEach(e => {
-            showToast(`⚠️ ${e.groupLabel}: ${e.reason}`, 'warning');
-          });
+          for (const e of operations.errors) {
+            failures.push({ label: e.groupLabel, reason: e.reason });
+          }
         }
 
-        // Execute updates (merge path) — 先写后删：更新必须成功才允许删除关联条目
-        let updateFails = 0;
-        const failedKeepIds = new Set(); // 记录更新失败的 keepItem ID
+        // Execute updates — continue on each error
+        const failedKeepIds = new Set();
         for (let idx = 0; idx < operations.toUpdate.length; idx++) {
           const op = operations.toUpdate[idx];
-          try {
-            mergeBtn.textContent = `合并中 ${idx + 1}/${operations.toUpdate.length}...`;
+          completedSteps++;
+          const pct = Math.round((completedSteps / totalSteps) * 100);
+          updateMergeProgress(pct, `合并 ${idx + 1}/${operations.toUpdate.length}...`);
 
-            // Smart title: re-encrypt new title if needed
+          try {
+            // Smart title re-encrypt
             if (op.titleOverride) {
               if (isDemoMode) {
                 op.data.Name = op.titleOverride;
@@ -2789,7 +2845,7 @@ async function handleMerge(groups) {
               }
             }
 
-            // Notes append: decrypt current → append → re-encrypt
+            // Notes append
             if (op.notesAppend) {
               if (isDemoMode) {
                 const currentNotes = op.data.Notes || op.data.notes || '';
@@ -2810,7 +2866,7 @@ async function handleMerge(groups) {
               }
             }
 
-            // URI optimization: re-encrypt simplified URIs
+            // URI optimization re-encrypt
             if (op.uriOptimizations && !isDemoMode) {
               const login = op.data.Login || op.data.login;
               if (login) {
@@ -2820,7 +2876,6 @@ async function handleMerge(groups) {
                     const encUri = await encryptString(opt.optimizedUri, symmetricKey);
                     if (uris[opt.index].Uri !== undefined) uris[opt.index].Uri = encUri;
                     if (uris[opt.index].uri !== undefined) uris[opt.index].uri = encUri;
-                    // Clear checksum since URI value changed
                     if (uris[opt.index].UriChecksum !== undefined) uris[opt.index].UriChecksum = null;
                     if (uris[opt.index].uriChecksum !== undefined) uris[opt.index].uriChecksum = null;
                   }
@@ -2828,19 +2883,21 @@ async function handleMerge(groups) {
               }
             }
 
-            console.log(`[Merge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
             const updateResult = await client.updateCipher(op.id, op.data);
-            console.log(`[Merge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));
+            successGroups++;
           } catch (err) {
             console.error(`[Merge] updateCipher ${op.id} failed:`, err);
-            updateFails++;
             failedKeepIds.add(op.id);
-            showToast(`⚠️ 合并更新失败 (${err.message})，已跳过该组`, 'warning');
+            // Find group label for this op
+            const matchGroup = allGroups.find(g => g.keepItem?.id === op.id);
+            failures.push({
+              label: matchGroup?.label || matchGroup?.matchKey || op.id,
+              reason: `合并失败: ${err.message}`,
+            });
           }
         }
 
-        // Execute deletes — 严格先写后删：跳过更新失败组的关联删除
-        // 构建 failedGroupDeleteIds：更新失败的组，其 removeItems 也不应删除
+        // Execute deletes — skip items from failed groups
         const failedGroupDeleteIds = new Set();
         if (failedKeepIds.size > 0) {
           for (const group of allGroups) {
@@ -2851,26 +2908,34 @@ async function handleMerge(groups) {
         }
         const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
         if (safeToDelete.length > 0) {
-          mergeBtn.textContent = '清理中...';
-          console.log(`[Merge DEBUG] calling softDeleteBulk, count: ${safeToDelete.length}, IDs:`, safeToDelete);
-          for (let i = 0; i < safeToDelete.length; i += 100) {
-            await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
+          updateMergeProgress(95, `清理 ${safeToDelete.length} 个重复条目...`);
+          try {
+            for (let i = 0; i < safeToDelete.length; i += 100) {
+              await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
+            }
+            successDeletes = safeToDelete.length;
+          } catch (err) {
+            console.error('[Merge] softDeleteBulk failed:', err);
+            failures.push({ label: '批量删除', reason: `删除失败: ${err.message}` });
           }
-          console.log('[Merge DEBUG] softDeleteBulk completed');
         }
 
-        const summary = [];
-        if (operations.toUpdate.length > 0) summary.push(`合并 ${operations.toUpdate.length - updateFails} 组`);
-        if (operations.toDelete.length > 0) summary.push(`删除 ${operations.toDelete.length} 条`);
-        if (updateFails > 0) summary.push(`${updateFails} 组合并失败`);
+        // Also count pure-delete groups as successes
+        const pureDeleteGroups = allGroups.filter(g => g.pureDelete && !failedKeepIds.has(g.keepItem?.id));
+        successGroups += pureDeleteGroups.length;
 
-        showToast(`✅ ${summary.join('，')}`, 'success');
+        updateMergeProgress(100, '完成！');
+        hideMergeProgress();
+
+        // Show report
+        showMergeReport(successGroups, successDeletes, failures);
+
         mergeBtn.textContent = '✅ 完成';
         mergeBtn.className = 'merge-btn success';
-
         setTimeout(() => resyncVault(), 1500);
       } catch (err) {
         console.error('Merge error:', err);
+        hideMergeProgress();
         showToast(`❌ 合并失败: ${err.message}`, 'error');
         mergeBtn.textContent = '🔀 一键合并';
         mergeBtn.className = 'merge-btn';

@@ -292,6 +292,28 @@
         </div>
       </div>
     </div>
+
+    <!-- Merge Progress Overlay -->
+    <div id="merge-progress-overlay" class="modal-overlay" style="display:none">
+      <div class="modal-card merge-progress-card">
+        <h3>🔀 批量合并中...</h3>
+        <div class="merge-progress-bar-container">
+          <div class="merge-progress-bar" id="merge-progress-bar"></div>
+        </div>
+        <p id="merge-progress-text" class="merge-progress-text">准备中...</p>
+      </div>
+    </div>
+
+    <!-- Merge Report Modal -->
+    <div id="merge-report-modal" class="modal-overlay" style="display:none">
+      <div class="modal-card merge-report-card">
+        <h3 id="merge-report-title">合并完成</h3>
+        <div id="merge-report-body" class="merge-report-body"></div>
+        <div class="modal-actions">
+          <button class="btn-primary" id="merge-report-close">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="/src/app.js"></script>
