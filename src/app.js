@@ -726,17 +726,26 @@ function renderFolderList() {
         t('folder.delete.title'),
         `${t('folder.delete.msg1')}${folderName}${t('folder.delete.msg2')}${count}${t('folder.delete.msg3')}`,
         async () => {
+          // ── Phase 1: 乐观热更新 ──
+          delete folderMap[folderId];
+          if (selectedFolderId === folderId) {
+            selectedFolderId = null;
+            switchView('all');
+          }
+          updateSidebarBadges();
+          renderFolderList();
+          showToast(`✅ ${folderName} ${t('folder.deleted.ok')}`, 'success');
+
+          // ── Phase 2: 后台服务端删除 ──
           try {
             await client.deleteFolder(folderId);
-            showToast(`✅ ${folderName} ${t('folder.deleted.ok')}`, 'success');
-            if (selectedFolderId === folderId) {
-              selectedFolderId = null;
-              switchView('all');
-            }
-            await resyncVault();
           } catch (err) {
-            showToast(`❌ ${t('toast.op.fail')}: ${err.message}`, 'error');
+            console.error('[Folder] Server deleteFolder failed:', err);
+            showToast(`❌ 文件夹删除失败: ${err.message}，正在回滚…`, 'error');
+            await resyncVault();
+            return;
           }
+          resyncVault();
         }
       );
     });
@@ -770,18 +779,34 @@ function showFolderNameModal(mode, folderId = null) {
     try {
       const encName = isDemoMode ? name : await encryptString(name, symmetricKey);
 
+      // ── Phase 1: 乐观热更新 ──
+      closeFolderModal();
       if (mode === 'create') {
-        const result = await client.createFolder(encName);
-        if (isDemoMode) folderMap[result.Id] = name;
         showToast(`✅ ${name} ${t('folder.created.ok')}`, 'success');
       } else {
-        await client.updateFolder(folderId, encName);
         if (isDemoMode) folderMap[folderId] = name;
         showToast(`✅ ${t('folder.renamed.ok')} ${name}`, 'success');
       }
 
-      closeFolderModal();
-      await resyncVault();
+      // ── Phase 2: 后台服务端操作 ──
+      try {
+        if (mode === 'create') {
+          const result = await client.createFolder(encName);
+          if (isDemoMode) folderMap[result.Id] = name;
+        } else {
+          await client.updateFolder(folderId, encName);
+        }
+      } catch (err) {
+        console.error('[Folder] Server operation failed:', err);
+        showToast(`❌ 文件夹操作失败: ${err.message}，正在回滚…`, 'error');
+        await resyncVault();
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = t('modal.confirm');
+        return;
+      }
+
+      // ── Phase 3: 后台 resync ──
+      resyncVault();
     } catch (err) {
       showToast(`❌ ${t('toast.op.fail')}: ${err.message}`, 'error');
     } finally {
@@ -2518,8 +2543,9 @@ function renderDuplicatesView() {
       t('batch.delete.title'),
       `${t('modal.confirm')} ${ids.length} ${t('batch.delete.msg')}`,
       async () => {
-        try {
           const deleteSet = new Set(ids);
+
+          // ── Phase 1: 乐观热更新 ──
           allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
           deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
           analysisResult = analyzeCiphers(allDecryptedCiphers);
@@ -2527,14 +2553,19 @@ function renderDuplicatesView() {
           updateSidebarBadges();
           renderDuplicatesView();
           showToast(`✅ ${ids.length} ${t('dup.items')} ${t('detail.delete.trash')}`, 'success');
-          for (let i = 0; i < ids.length; i += 100) {
-            await client.softDeleteBulk(ids.slice(i, i + 100));
+
+          // ── Phase 2: 后台服务端删除 ──
+          try {
+            for (let i = 0; i < ids.length; i += 100) {
+              await client.softDeleteBulk(ids.slice(i, i + 100));
+            }
+          } catch (err) {
+            console.error('[Delete] Server softDeleteBulk failed:', err);
+            showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+            await resyncVault();
+            return;
           }
           resyncVault();
-        } catch (err) {
-          showToast(`❌ ${t('detail.delete.fail')}: ${err.message}`, 'error');
-          resyncVault();
-        }
       }
     );
   });
