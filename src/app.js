@@ -409,10 +409,8 @@ function enterDemoMode() {
 
 function updateSidebarBadges() {
   const stats = analysisResult.stats;
-  $('#badge-all').textContent = stats.totalItems;
   const dupCount = stats.exactDuplicateGroups + stats.sameSiteDuplicateGroups;
   $('#badge-dup').textContent = dupCount > 0 ? dupCount : '';
-  $('#badge-orphan').textContent = stats.orphanItems;
   const noFolderCount = allDecryptedCiphers.filter(c => !c.raw?.FolderId).length;
   $('#badge-nofolder').textContent = noFolderCount > 0 ? noFolderCount : '';
   const issueCount = healthResult.issues.reduce((s, i) => s + i.count, 0);
@@ -434,8 +432,8 @@ function updateSidebarBadges() {
       deadBadge.textContent = '…';
     }
   }
-  // Special type badges
-  const typeMap = { 'type-card': 3, 'type-identity': 4, 'type-note': 2, 'type-sshkey': 5 };
+  // All five type badges
+  const typeMap = { 'type-login': 1, 'type-card': 3, 'type-identity': 4, 'type-note': 2, 'type-sshkey': 5 };
   for (const [viewName, typeId] of Object.entries(typeMap)) {
     const count = allDecryptedCiphers.filter(c => (c.raw?.Type ?? c.raw?.type) === typeId).length;
     const badge = $(`#badge-${viewName}`);
@@ -471,9 +469,9 @@ function switchView(view) {
   $$('.content-view').forEach(v => v.classList.remove('active'));
   $(`#view-${view}`)?.classList.add('active');
 
-  // Show/hide filter bar (only for 'all' and 'folder' views)
+  // Show/hide filter bar (only for folder view)
   const filterBar = $('#filter-bar');
-  filterBar.style.display = (view === 'all' || view === 'folder') ? 'flex' : 'none';
+  filterBar.style.display = view === 'folder' ? 'flex' : 'none';
 
   // Clear selection on view change
   selectedItems.clear();
@@ -482,9 +480,8 @@ function switchView(view) {
   // Render the view
   switch (view) {
     case 'overview': renderOverview(); break;
-    case 'all': renderAllItems(); break;
+    case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
     case 'duplicates': renderDuplicatesView(); break;
-    case 'orphans': renderOrphansView(); break;
     case 'nofolder': renderNoFolderView(); break;
     case 'health': renderHealthView(); break;
     case 'folder': renderFolderView(); break;
@@ -511,9 +508,8 @@ function setupSearch() {
       searchQuery = input.value;
       // Re-render whichever view is active
       switch (currentView) {
-        case 'all': renderAllItems(); break;
+        case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
         case 'duplicates': renderDuplicatesView(); break;
-        case 'orphans': renderOrphansView(); break;
         case 'nofolder': renderNoFolderView(); break;
         case 'folder': renderFolderView(); break;
         case 'trash': renderTrashView(); break;
@@ -535,10 +531,25 @@ function setupSearch() {
 function matchesSearch(item) {
   if (!searchQuery.trim()) return true;
   const q = searchQuery.toLowerCase().trim();
-  const name = (item.decrypted?.name || '').toLowerCase();
-  const username = (item.decrypted?.username || '').toLowerCase();
-  const uris = (item.decrypted?.uris || []).join(' ').toLowerCase();
-  return name.includes(q) || username.includes(q) || uris.includes(q);
+  const d = item.decrypted;
+  const name = (d?.name || '').toLowerCase();
+  const username = (d?.username || '').toLowerCase();
+  const uris = (d?.uris || []).join(' ').toLowerCase();
+  const notes = (d?.notes || '').toLowerCase();
+  // Card fields
+  const cardHolder = (d?.card?.cardholderName || '').toLowerCase();
+  const cardNumber = (d?.card?.number || '').toLowerCase();
+  const cardBrand = (d?.card?.brand || '').toLowerCase();
+  // Identity fields
+  const idFields = d?.identity ? [d.identity.firstName, d.identity.lastName, d.identity.email, d.identity.company, d.identity.username, d.identity.phone].filter(Boolean).join(' ').toLowerCase() : '';
+  // SSH fields
+  const sshFields = d?.sshKey ? [d.sshKey.keyFingerprint, d.sshKey.publicKey].filter(Boolean).join(' ').toLowerCase() : '';
+  // Custom fields
+  const customFields = (d?.fields || []).map(f => `${f.name || ''} ${f.value || ''}`).join(' ').toLowerCase();
+
+  return name.includes(q) || username.includes(q) || uris.includes(q) || notes.includes(q) ||
+    cardHolder.includes(q) || cardNumber.includes(q) || cardBrand.includes(q) ||
+    idFields.includes(q) || sshFields.includes(q) || customFields.includes(q);
 }
 
 function setupKeyboardShortcuts() {
@@ -583,13 +594,13 @@ function setupFilterTags() {
       activeFilters.add(filterId);
       tag.classList.add('active');
     }
-    renderAllItems();
+    switchView(currentView);
   });
 
   // Sort select
   $('#sort-select').addEventListener('change', (e) => {
     sortId = e.target.value;
-    renderAllItems();
+    switchView(currentView);
   });
 }
 
@@ -737,7 +748,7 @@ function renderFolderList() {
           delete folderMap[folderId];
           if (selectedFolderId === folderId) {
             selectedFolderId = null;
-            switchView('all');
+            switchView('type-login');
           }
           updateSidebarBadges();
           renderFolderList();
@@ -992,7 +1003,7 @@ function openDetailDrawer(cipher) {
   $('#detail-title').textContent = cipher.decrypted?.name || t('item.untitled');
 
   const body = $('#detail-body');
-  const typeLabels = { 1: t('detail.type.login'), 2: t('detail.type.note'), 3: t('detail.type.card'), 4: t('detail.type.identity') };
+  const typeLabels = { 1: t('detail.type.login'), 2: t('detail.type.note'), 3: t('detail.type.card'), 4: t('detail.type.identity'), 5: 'SSH 密钥' };
   const d = cipher.decrypted;
 
   let html = '';
@@ -1107,6 +1118,23 @@ function openDetailDrawer(cipher) {
     html += '</div>';
   }
 
+  // ── Section: SSH Key ──
+  if (cipher.type === 5 && d.sshKey) {
+    const ssh = d.sshKey;
+    html += `<div class="detail-section"><div class="detail-section-title">🔑 SSH 密钥</div>`;
+    if (ssh.publicKey) html += detailField('公钥', ssh.publicKey, true);
+    if (ssh.keyFingerprint) html += detailField('指纹', ssh.keyFingerprint, true);
+    if (ssh.privateKey) {
+      html += `<div class="detail-field"><div class="detail-label">私钥</div>
+        <div class="detail-value">
+          <span class="detail-pw">${'•'.repeat(20)}</span>
+          <button class="pw-toggle" onclick="togglePw(this, '${escAttr(ssh.privateKey)}')">👁</button>
+          <button class="copy-btn" onclick="copyText('${escAttr(ssh.privateKey)}', this)">📋</button>
+        </div></div>`;
+    }
+    html += '</div>';
+  }
+
   // ── Section: Custom Fields ──
   if (d.fields && d.fields.length > 0) {
     html += `<div class="detail-section"><div class="detail-section-title">${t('detail.section.fields')}</div>`;
@@ -1123,6 +1151,24 @@ function openDetailDrawer(cipher) {
       } else { // text or linked
         html += detailField(f.name || t('detail.field.noname'), f.value || '', true);
       }
+    });
+    html += '</div>';
+  }
+
+  // ── Section: Password History ──
+  if (d.passwordHistory && d.passwordHistory.length > 0) {
+    html += `<div class="detail-section"><div class="detail-section-title">🕐 密码历史 (${d.passwordHistory.length})</div>`;
+    d.passwordHistory.forEach((ph, idx) => {
+      const pw = ph.password || '';
+      const date = ph.lastUsedDate ? new Date(ph.lastUsedDate).toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') : '';
+      html += `<div class="detail-field">
+        <div class="detail-label">${date || `#${idx + 1}`}</div>
+        <div class="detail-value">
+          <span class="detail-pw">${'•'.repeat(Math.min(pw.length, 16))}</span>
+          <button class="pw-toggle" onclick="togglePw(this, '${escAttr(pw)}')">👁</button>
+          <button class="copy-btn" onclick="copyText('${escAttr(pw)}', this)">📋</button>
+        </div>
+      </div>`;
     });
     html += '</div>';
   }
@@ -1432,12 +1478,128 @@ function openEditDrawer(cipher) {
     </div>`;
   }
 
+  // ── Card Fields ──
+  if (cipher.type === 3) {
+    const card = d.card || {};
+    const brandOptions = ['', 'Visa', 'Mastercard', 'Amex', 'Discover', 'Diners Club', 'JCB', 'Maestro', 'UnionPay', 'RuPay', 'Other']
+      .map(b => `<option value="${b}" ${(card.brand || '') === b ? 'selected' : ''}>${b || '— 无 —'}</option>`).join('');
+    html += `<div class="edit-section">
+      <div class="edit-section-title">💳 支付卡信息</div>
+      <div class="edit-field">
+        <label>持卡人姓名</label>
+        <input type="text" id="edit-card-cardholderName" value="${escAttr(card.cardholderName || '')}">
+      </div>
+      <div class="edit-field">
+        <label>卡号</label>
+        <input type="text" id="edit-card-number" value="${escAttr(card.number || '')}" placeholder="1234 5678 9012 3456">
+      </div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1">
+          <label>到期月</label>
+          <input type="text" id="edit-card-expMonth" value="${escAttr(card.expMonth || '')}" placeholder="MM">
+        </div>
+        <div style="flex:1">
+          <label>到期年</label>
+          <input type="text" id="edit-card-expYear" value="${escAttr(card.expYear || '')}" placeholder="YYYY">
+        </div>
+      </div>
+      <div class="edit-field">
+        <label>安全码 (CVV)</label>
+        <input type="password" id="edit-card-code" value="${escAttr(card.code || '')}">
+      </div>
+      <div class="edit-field">
+        <label>品牌</label>
+        <select id="edit-card-brand">${brandOptions}</select>
+      </div>
+    </div>`;
+  }
+
+  // ── Identity Fields ──
+  if (cipher.type === 4) {
+    const id = d.identity || {};
+    const titleOptions = [
+      { v: '', l: '— 无 —' }, { v: 'Mr', l: 'Mr' }, { v: 'Mrs', l: 'Mrs' },
+      { v: 'Ms', l: 'Ms' }, { v: 'Mx', l: 'Mx' }, { v: 'Dr', l: 'Dr' }
+    ].map(o => `<option value="${o.v}" ${(id.title || '') === o.v ? 'selected' : ''}>${o.l}</option>`).join('');
+
+    html += `<div class="edit-section">
+      <div class="edit-section-title">🪪 身份信息</div>
+      <div class="edit-field">
+        <label>称谓</label>
+        <select id="edit-id-title">${titleOptions}</select>
+      </div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>名</label><input type="text" id="edit-id-firstName" value="${escAttr(id.firstName || '')}"></div>
+        <div style="flex:1"><label>中间名</label><input type="text" id="edit-id-middleName" value="${escAttr(id.middleName || '')}"></div>
+        <div style="flex:1"><label>姓</label><input type="text" id="edit-id-lastName" value="${escAttr(id.lastName || '')}"></div>
+      </div>
+      <div class="edit-field">
+        <label>用户名</label>
+        <input type="text" id="edit-id-username" value="${escAttr(id.username || '')}">
+      </div>
+      <div class="edit-field">
+        <label>公司</label>
+        <input type="text" id="edit-id-company" value="${escAttr(id.company || '')}">
+      </div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>邮箱</label><input type="email" id="edit-id-email" value="${escAttr(id.email || '')}"></div>
+        <div style="flex:1"><label>电话</label><input type="tel" id="edit-id-phone" value="${escAttr(id.phone || '')}"></div>
+      </div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>社会安全号</label><input type="text" id="edit-id-ssn" value="${escAttr(id.ssn || '')}"></div>
+        <div style="flex:1"><label>护照号</label><input type="text" id="edit-id-passportNumber" value="${escAttr(id.passportNumber || '')}"></div>
+      </div>
+      <div class="edit-field">
+        <label>驾照号</label>
+        <input type="text" id="edit-id-licenseNumber" value="${escAttr(id.licenseNumber || '')}">
+      </div>
+    </div>
+    <div class="edit-section">
+      <div class="edit-section-title">📍 地址</div>
+      <div class="edit-field"><label>地址 1</label><input type="text" id="edit-id-address1" value="${escAttr(id.address1 || '')}"></div>
+      <div class="edit-field"><label>地址 2</label><input type="text" id="edit-id-address2" value="${escAttr(id.address2 || '')}"></div>
+      <div class="edit-field"><label>地址 3</label><input type="text" id="edit-id-address3" value="${escAttr(id.address3 || '')}"></div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>城市</label><input type="text" id="edit-id-city" value="${escAttr(id.city || '')}"></div>
+        <div style="flex:1"><label>州/省</label><input type="text" id="edit-id-state" value="${escAttr(id.state || '')}"></div>
+      </div>
+      <div class="edit-field" style="display:flex;gap:12px">
+        <div style="flex:1"><label>邮编</label><input type="text" id="edit-id-postalCode" value="${escAttr(id.postalCode || '')}"></div>
+        <div style="flex:1"><label>国家</label><input type="text" id="edit-id-country" value="${escAttr(id.country || '')}"></div>
+      </div>
+    </div>`;
+  }
+
+  // ── SSH Key Fields ──
+  if (cipher.type === 5) {
+    const ssh = d.sshKey || {};
+    html += `<div class="edit-section">
+      <div class="edit-section-title">🔑 SSH 密钥</div>
+      <div class="edit-field">
+        <label>公钥</label>
+        <textarea id="edit-ssh-publicKey" rows="3" style="font-family:monospace;font-size:0.82rem">${escHtml(ssh.publicKey || '')}</textarea>
+      </div>
+      <div class="edit-field">
+        <label>私钥</label>
+        <textarea id="edit-ssh-privateKey" rows="5" style="font-family:monospace;font-size:0.82rem">${escHtml(ssh.privateKey || '')}</textarea>
+      </div>
+      <div class="edit-field">
+        <label>指纹</label>
+        <input type="text" id="edit-ssh-keyFingerprint" value="${escAttr(ssh.keyFingerprint || '')}" style="font-family:monospace">
+      </div>
+    </div>`;
+  }
+
   // ── Notes + Reprompt ──
   html += `<div class="edit-section">
     <div class="edit-section-title">${t('detail.section.extra')}</div>
     <div class="edit-field">
       <label>${t('edit.section.notes')}</label>
       <textarea id="edit-notes">${escHtml(d.notes || '')}</textarea>
+    </div>
+    <div class="edit-field" style="display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="edit-favorite" ${d.favorite ? 'checked' : ''}>
+      <label for="edit-favorite" style="margin:0;text-transform:none;font-size:0.88rem">⭐ 收藏</label>
     </div>
     <div class="edit-field" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="edit-reprompt" ${d.reprompt === 1 ? 'checked' : ''}>
@@ -1562,6 +1724,192 @@ function openEditDrawer(cipher) {
   $('#edit-delete-btn')?.addEventListener('click', () => deleteCurrentCipher(cipher));
 }
 
+// ========================
+// CREATE NEW ITEM DRAWER
+// ========================
+function openCreateDrawer(typeId) {
+  const typeNames = { 1: '登录', 2: '安全笔记', 3: '支付卡', 4: '身份', 5: 'SSH 密钥' };
+  // Build a fake cipher shell so we can reuse openEditDrawer's form
+  const fakeCipher = {
+    id: null,
+    type: typeId,
+    raw: { Type: typeId, FolderId: null },
+    decrypted: {
+      name: '',
+      notes: '',
+      reprompt: 0,
+      username: '', password: '', totp: '',
+      uris: [],
+      fields: [],
+      card: {},
+      identity: {},
+      sshKey: {},
+    },
+  };
+
+  // Open the edit drawer with this shell
+  openEditDrawer(fakeCipher);
+
+  // Override title
+  $('#detail-title').textContent = `✨ 新建${typeNames[typeId] || '条目'}`;
+
+  // Override save to call createCipher instead of updateCipher
+  const saveBtn = $('#edit-save-btn');
+  // Remove old listener by replacing node
+  const newSaveBtn = saveBtn.cloneNode(true);
+  saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+  newSaveBtn.addEventListener('click', () => saveNewCipher(fakeCipher, typeId));
+
+  // Hide delete button for create mode
+  const deleteBtn = $('#edit-delete-btn');
+  if (deleteBtn) deleteBtn.style.display = 'none';
+}
+
+async function saveNewCipher(fakeCipher, typeId) {
+  const saveBtn = $('#edit-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '创建中…';
+
+  try {
+    const name = $('#edit-name')?.value?.trim() || '';
+    if (!name) {
+      showToast('❌ 名称不能为空', 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 保存';
+      return;
+    }
+
+    const folderId = $('#edit-folder')?.value || null;
+    const notes = $('#edit-notes')?.value || '';
+    const reprompt = $('#edit-reprompt')?.checked ? 1 : 0;
+    const favorite = $('#edit-favorite')?.checked || false;
+
+    // Demo mode: create in-memory
+    if (isDemoMode) {
+      const newId = 'demo-' + Date.now();
+      const newCipher = {
+        id: newId, type: typeId,
+        raw: { Id: newId, Type: typeId, FolderId: folderId, Name: name, Notes: notes, Reprompt: reprompt, Fields: null, RevisionDate: new Date().toISOString(), CreationDate: new Date().toISOString() },
+        decrypted: { name, notes, reprompt, favorite, fields: [], creationDate: new Date().toISOString() },
+      };
+
+      if (typeId === 1) {
+        newCipher.decrypted.username = $('#edit-username')?.value || '';
+        newCipher.decrypted.password = $('#edit-password')?.value || '';
+        newCipher.decrypted.totp = $('#edit-totp')?.value || '';
+        const uriInputs = [...document.querySelectorAll('.edit-uri')];
+        newCipher.decrypted.uris = uriInputs.filter(i => i.value.trim()).map(i => i.value.trim());
+        newCipher.raw.Login = { Username: newCipher.decrypted.username, Password: newCipher.decrypted.password, Totp: newCipher.decrypted.totp, Uris: newCipher.decrypted.uris.map(u => ({ Uri: u, Match: null })) };
+      }
+
+      allDecryptedCiphers.push(newCipher);
+      showToast('✅ 条目已创建', 'success');
+      closeDetailDrawer();
+      switchView(currentView);
+      updateSidebarBadges();
+      return;
+    }
+
+    // Real API mode
+    const payload = {
+      Type: typeId, type: typeId,
+      Name: await encryptString(name, symmetricKey),
+      name: await encryptString(name, symmetricKey),
+      Notes: notes ? await encryptString(notes, symmetricKey) : null,
+      notes: notes ? await encryptString(notes, symmetricKey) : null,
+      FolderId: folderId, folderId,
+      Reprompt: reprompt, reprompt,
+      Favorite: favorite, favorite,
+      OrganizationId: null,
+      Fields: null, fields: null,
+    };
+
+    // Login
+    if (typeId === 1) {
+      const username = $('#edit-username')?.value || '';
+      const password = $('#edit-password')?.value || '';
+      const totp = $('#edit-totp')?.value || '';
+      const uriInputs = [...document.querySelectorAll('.edit-uri')];
+      const uris = [];
+      for (const input of uriInputs) {
+        const val = input.value.trim();
+        if (val) uris.push({ Uri: await encryptString(val, symmetricKey), uri: await encryptString(val, symmetricKey), Match: null, match: null });
+      }
+      payload.Login = payload.login = {
+        Username: await encryptString(username, symmetricKey), username: await encryptString(username, symmetricKey),
+        Password: await encryptString(password, symmetricKey), password: await encryptString(password, symmetricKey),
+        Totp: totp ? await encryptString(totp, symmetricKey) : null, totp: totp ? await encryptString(totp, symmetricKey) : null,
+        Uris: uris, uris,
+      };
+    }
+
+    // Card
+    if (typeId === 3) {
+      const card = {};
+      for (const f of ['cardholderName', 'number', 'expMonth', 'expYear', 'code', 'brand']) {
+        const val = $(`#edit-card-${f}`)?.value || '';
+        const key = f.charAt(0).toUpperCase() + f.slice(1);
+        card[key] = card[f] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      payload.Card = payload.card = card;
+    }
+
+    // Identity
+    if (typeId === 4) {
+      const identity = {};
+      for (const f of ['title','firstName','middleName','lastName','username','company','email','phone','ssn','passportNumber','licenseNumber','address1','address2','address3','city','state','postalCode','country']) {
+        const val = $(`#edit-id-${f}`)?.value || '';
+        const key = f.charAt(0).toUpperCase() + f.slice(1);
+        identity[key] = identity[f] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      payload.Identity = payload.identity = identity;
+    }
+
+    // SecureNote
+    if (typeId === 2) {
+      payload.SecureNote = payload.secureNote = { Type: 0, type: 0 };
+    }
+
+    // SSH Key
+    if (typeId === 5) {
+      const ssh = {};
+      for (const [lower, upper] of Object.entries({ publicKey: 'PublicKey', privateKey: 'PrivateKey', keyFingerprint: 'KeyFingerprint' })) {
+        const val = $(`#edit-ssh-${lower}`)?.value || '';
+        ssh[upper] = ssh[lower] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      payload.SshKey = payload.sshKey = ssh;
+    }
+
+    // Custom fields
+    const fieldRows = [...document.querySelectorAll('.custom-field-row')];
+    if (fieldRows.length > 0) {
+      const encFields = [];
+      for (const row of fieldRows) {
+        const fn = row.querySelector('.edit-field-name')?.value?.trim() || '';
+        const ft = parseInt(row.querySelector('.edit-field-type')?.value ?? '0');
+        const fv = ft === 2 ? (row.querySelector('.edit-field-value')?.checked ? 'true' : 'false') : (row.querySelector('.edit-field-value')?.value || '');
+        encFields.push({
+          Name: await encryptString(fn, symmetricKey), name: await encryptString(fn, symmetricKey),
+          Value: await encryptString(fv, symmetricKey), value: await encryptString(fv, symmetricKey),
+          Type: ft, type: ft,
+        });
+      }
+      payload.Fields = payload.fields = encFields;
+    }
+
+    showToast('✅ 条目已创建', 'success');
+    closeDetailDrawer();
+
+    await client.createCipher(payload);
+    await resyncVault();
+  } catch (err) {
+    console.error('Create error:', err);
+    showToast(`❌ 创建失败: ${err.message}`, 'error');
+    saveBtn.disabled = false;
+    saveBtn.textContent = '💾 保存';
+  }
+}
+
 async function saveEditedCipher(cipher) {
   const saveBtn = $('#edit-save-btn');
   saveBtn.disabled = true;
@@ -1576,6 +1924,8 @@ async function saveEditedCipher(cipher) {
       cipher.decrypted.notes = $('#edit-notes')?.value || '';
       cipher.raw.Notes = cipher.decrypted.notes;
       cipher.raw.Reprompt = $('#edit-reprompt')?.checked ? 1 : 0;
+      cipher.decrypted.favorite = $('#edit-favorite')?.checked || false;
+      cipher.raw.Favorite = cipher.decrypted.favorite;
 
       if (cipher.type === 1) {
         cipher.decrypted.username = $('#edit-username')?.value || '';
@@ -1588,6 +1938,38 @@ async function saveEditedCipher(cipher) {
         const uriInputs = [...document.querySelectorAll('.edit-uri')];
         login.Uris = uriInputs.filter(i => i.value.trim()).map(i => ({ Uri: i.value.trim(), Match: null }));
         cipher.decrypted.uri = login.Uris[0]?.Uri || '';
+      }
+
+      // Card (type 3)
+      if (cipher.type === 3) {
+        const card = cipher.decrypted.card || (cipher.decrypted.card = {});
+        const raw = cipher.raw.Card || cipher.raw.card || (cipher.raw.Card = {});
+        const cardFields = ['cardholderName', 'number', 'expMonth', 'expYear', 'code', 'brand'];
+        for (const f of cardFields) {
+          card[f] = $(`#edit-card-${f}`)?.value || '';
+          raw[f.charAt(0).toUpperCase() + f.slice(1)] = card[f];
+        }
+      }
+
+      // Identity (type 4)
+      if (cipher.type === 4) {
+        const identity = cipher.decrypted.identity || (cipher.decrypted.identity = {});
+        const raw = cipher.raw.Identity || cipher.raw.identity || (cipher.raw.Identity = {});
+        const idFields = ['title','firstName','middleName','lastName','username','company','email','phone','ssn','passportNumber','licenseNumber','address1','address2','address3','city','state','postalCode','country'];
+        for (const f of idFields) {
+          identity[f] = $(`#edit-id-${f}`)?.value || '';
+          raw[f.charAt(0).toUpperCase() + f.slice(1)] = identity[f];
+        }
+      }
+
+      // SSH Key (type 5)
+      if (cipher.type === 5) {
+        const ssh = cipher.decrypted.sshKey || (cipher.decrypted.sshKey = {});
+        const raw = cipher.raw.SshKey || cipher.raw.sshKey || (cipher.raw.SshKey = {});
+        ssh.publicKey = $('#edit-ssh-publicKey')?.value || '';
+        ssh.privateKey = $('#edit-ssh-privateKey')?.value || '';
+        ssh.keyFingerprint = $('#edit-ssh-keyFingerprint')?.value || '';
+        raw.PublicKey = ssh.publicKey; raw.PrivateKey = ssh.privateKey; raw.KeyFingerprint = ssh.keyFingerprint;
       }
 
       // Custom fields
@@ -1626,6 +2008,7 @@ async function saveEditedCipher(cipher) {
     updated.Notes = updated.notes = notes ? await encryptString(notes, symmetricKey) : null;
     updated.FolderId = updated.folderId = folderId;
     updated.Reprompt = updated.reprompt = reprompt;
+    updated.Favorite = updated.favorite = $('#edit-favorite')?.checked || false;
 
     if (cipher.type === 1) {
       const login = updated.Login || updated.login || {};
@@ -1654,6 +2037,46 @@ async function saveEditedCipher(cipher) {
       login.Uris = login.uris = uris;
 
       updated.Login = updated.login = login;
+    }
+
+    // Card (type 3)
+    if (cipher.type === 3) {
+      const card = updated.Card || updated.card || {};
+      const cardFields = ['cardholderName', 'number', 'expMonth', 'expYear', 'code', 'brand'];
+      for (const f of cardFields) {
+        const val = $(`#edit-card-${f}`)?.value || '';
+        const key = f.charAt(0).toUpperCase() + f.slice(1);
+        card[key] = card[f] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      updated.Card = updated.card = card;
+    }
+
+    // Identity (type 4)
+    if (cipher.type === 4) {
+      const identity = updated.Identity || updated.identity || {};
+      const idFields = ['title','firstName','middleName','lastName','username','company','email','phone','ssn','passportNumber','licenseNumber','address1','address2','address3','city','state','postalCode','country'];
+      for (const f of idFields) {
+        const val = $(`#edit-id-${f}`)?.value || '';
+        const key = f.charAt(0).toUpperCase() + f.slice(1);
+        identity[key] = identity[f] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      updated.Identity = updated.identity = identity;
+    }
+
+    // SecureNote (type 2)
+    if (cipher.type === 2) {
+      updated.SecureNote = updated.secureNote = { Type: 0, type: 0 };
+    }
+
+    // SSH Key (type 5)
+    if (cipher.type === 5) {
+      const ssh = updated.SshKey || updated.sshKey || {};
+      const sshFields = { publicKey: 'PublicKey', privateKey: 'PrivateKey', keyFingerprint: 'KeyFingerprint' };
+      for (const [lower, upper] of Object.entries(sshFields)) {
+        const val = $(`#edit-ssh-${lower}`)?.value || '';
+        ssh[upper] = ssh[lower] = val ? await encryptString(val, symmetricKey) : null;
+      }
+      updated.SshKey = updated.sshKey = ssh;
     }
 
     // Custom fields (4 types: 0=text, 1=hidden, 2=boolean, 3=linked)
@@ -1990,6 +2413,22 @@ async function decryptAllCiphers(syncData) {
       }
     }
 
+    // SSH Key type
+    if (cipher.Type === 5 && (cipher.SshKey || cipher.sshKey)) {
+      const sk = cipher.SshKey || cipher.sshKey;
+      item.decrypted.sshKey = {};
+      const sshFields = {
+        PrivateKey: 'privateKey',
+        PublicKey: 'publicKey',
+        KeyFingerprint: 'keyFingerprint',
+      };
+      for (const [upper, lower] of Object.entries(sshFields)) {
+        const rawVal = await decryptFieldWithRetry(sk[upper] || sk[lower], symmetricKey, 5, logEntries, `SSH.${upper}`);
+        if (fieldFailed(rawVal)) decryptErrors.push(`sshKey.${lower}`);
+        item.decrypted.sshKey[lower] = fieldValue(rawVal);
+      }
+    }
+
     // Custom fields
     if (cipher.Fields && cipher.Fields.length > 0) {
       item.decrypted.fields = [];
@@ -2001,6 +2440,20 @@ async function decryptAllCiphers(syncData) {
         if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
         const fieldType = f.Type ?? f.type ?? 0;
         item.decrypted.fields.push({ name: fieldValue(rawFName), value: fieldValue(rawFValue), type: fieldType });
+      }
+    }
+
+    // Password history
+    if (cipher.PasswordHistory && cipher.PasswordHistory.length > 0) {
+      item.decrypted.passwordHistory = [];
+      for (let i = 0; i < cipher.PasswordHistory.length; i++) {
+        const ph = cipher.PasswordHistory[i];
+        const rawPw = await decryptFieldWithRetry(ph.Password || ph.password, symmetricKey, 5, logEntries, `密码历史[${i + 1}]`);
+        if (fieldFailed(rawPw)) decryptErrors.push('passwordHistory');
+        item.decrypted.passwordHistory.push({
+          password: fieldValue(rawPw),
+          lastUsedDate: ph.LastUsedDate || ph.lastUsedDate,
+        });
       }
     }
 
@@ -2142,25 +2595,25 @@ function renderOverview() {
     </div>
 
     <div class="overview-grid">
-      <div class="stat-card clickable" onclick="document.querySelector('[data-view=all]').click()">
+      <div class="stat-card clickable" id="ov-total">
         <div class="stat-number">${stats.totalItems}</div>
         <div class="stat-label">${t('overview.title')}</div>
       </div>
-      <div class="stat-card clickable" onclick="document.querySelector('[data-view=all]').click()">
+      <div class="stat-card clickable" id="ov-login">
         <div class="stat-number">${stats.loginItems}</div>
         <div class="stat-label">${t('overview.logins')}</div>
       </div>
-      <div class="stat-card warn clickable" onclick="document.querySelector('[data-view=duplicates]').click()">
+      <div class="stat-card warn clickable" id="ov-dup">
         <div class="stat-number">${stats.exactDuplicateGroups + stats.sameSiteDuplicateGroups}</div>
         <div class="stat-label">${t('overview.dup.groups')}</div>
       </div>
-      <div class="stat-card warn clickable" onclick="document.querySelector('[data-view=duplicates]').click()">
+      <div class="stat-card warn clickable" id="ov-clean">
         <div class="stat-number">${stats.totalDuplicateItems}</div>
         <div class="stat-label">${t('overview.cleanable')}</div>
       </div>
-      <div class="stat-card info clickable" onclick="document.querySelector('[data-view=orphans]').click()">
-        <div class="stat-number">${stats.orphanItems}</div>
-        <div class="stat-label">${t('overview.orphans')}</div>
+      <div class="stat-card clickable" id="ov-nofolder">
+        <div class="stat-number">${stats.noFolderItems || 0}</div>
+        <div class="stat-label">${getLocale() === 'en' ? 'No Folder' : '无文件夹'}</div>
       </div>
     </div>
 
@@ -2185,31 +2638,25 @@ function renderOverview() {
   `;
 
   // Quick action handlers for "all" view with filter
+  // Wire up stat card clicks
+  $('#ov-total')?.addEventListener('click', () => switchView('type-login'));
+  $('#ov-login')?.addEventListener('click', () => switchView('type-login'));
+  $('#ov-dup')?.addEventListener('click', () => switchView('duplicates'));
+  $('#ov-clean')?.addEventListener('click', () => switchView('duplicates'));
+  $('#ov-nofolder')?.addEventListener('click', () => switchView('nofolder'));
+
   $('#qa-no-url')?.addEventListener('click', () => {
-    activeFilters.clear();
-    activeFilters.add('no-url');
-    switchView('all');
-    $$('.filter-tag').forEach(t => {
-      t.classList.toggle('active', t.dataset.filter === 'no-url');
-    });
+    searchQuery = '';
+    switchView('health');
   });
 
   $('#qa-no-name')?.addEventListener('click', () => {
-    activeFilters.clear();
-    activeFilters.add('no-name');
-    switchView('all');
-    $$('.filter-tag').forEach(t => {
-      t.classList.toggle('active', t.dataset.filter === 'no-name');
-    });
+    searchQuery = '';
+    switchView('health');
   });
 
   $('#qa-no-folder')?.addEventListener('click', () => {
-    activeFilters.clear();
-    activeFilters.add('no-folder');
-    switchView('all');
-    $$('.filter-tag').forEach(t => {
-      t.classList.toggle('active', t.dataset.filter === 'no-folder');
-    });
+    switchView('nofolder');
   });
 
   // Health issue row click → jump to filtered all view
@@ -2221,7 +2668,7 @@ function renderOverview() {
       if (filterId) {
         activeFilters.clear();
         activeFilters.add(filterId);
-        switchView('all');
+        switchView('health');
         $$('.filter-tag').forEach(t => {
           t.classList.toggle('active', t.dataset.filter === filterId);
         });
@@ -2233,155 +2680,8 @@ function renderOverview() {
   });
 }
 
-// ========================
-// RENDER: ALL ITEMS
-// ========================
-function renderAllItems() {
-  const container = $('#view-all');
-  const filtered = searchAndFilter(allDecryptedCiphers, {
-    query: searchQuery,
-    activeFilters,
-    typeFilter: null,
-    sortId,
-  });
 
-  const typeIcons = { 1: '🔐', 2: '📝', 3: '💳', 4: '🪪' };
 
-  // === Group items by first letter (A-Z + #) ===
-  const letterGroups = {};
-  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  for (const c of filtered) {
-    const name = (c.decrypted?.name || '').trim();
-    let firstChar = name.charAt(0).toUpperCase();
-    // Only A-Z counts as a letter group; everything else → #
-    if (!firstChar || !LETTERS.includes(firstChar)) {
-      firstChar = '#';
-    }
-    if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
-    letterGroups[firstChar].push(c);
-  }
-
-  // Sort letters: A-Z first, then #
-  const sortedLetters = Object.keys(letterGroups).sort((a, b) => {
-    if (a === '#') return 1;
-    if (b === '#') return -1;
-    return a.localeCompare(b);
-  });
-
-  // === Build HTML ===
-  const hasGroups = sortedLetters.length > 0 && filtered.length > 0;
-
-  container.innerHTML = `
-    <div class="results-count">${filtered.length} / ${allDecryptedCiphers.length} 条目</div>
-    <div class="section-header">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;color:var(--text-secondary)">
-        <input type="checkbox" id="select-all-cb" class="item-checkbox" /> 全选
-      </label>
-    </div>
-    <div class="all-items-body" style="position:relative">
-      ${hasGroups ? `
-        <!-- A-Z Quick Index -->
-        <div class="az-index-strip" id="az-index-strip">
-          ${sortedLetters.map(l => `<button class="az-index-letter" data-letter="${l}">${l}</button>`).join('')}
-        </div>
-      ` : ''}
-      <div class="all-items-list">
-        ${sortedLetters.map(letter => `
-          <div class="letter-section" id="letter-section-${letter}">
-            <div class="letter-section-header">${letter}</div>
-            ${letterGroups[letter].map(c => `
-              <div class="vault-item ${selectedItems.has(c.id) ? 'selected' : ''}" data-id="${c.id}">
-                <input type="checkbox" class="item-checkbox item-select-cb" data-id="${c.id}" ${selectedItems.has(c.id) ? 'checked' : ''}/>
-                <div class="item-type-icon">${typeIcons[c.type] || '📄'}</div>
-                <div class="item-info">
-                  <div class="item-name">${escHtml(c.decrypted?.name || '(无标题)')}</div>
-                  <div class="item-meta">
-                    ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
-                    ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${linkUri(c.decrypted.uris[0])}</span>` : ''}
-                    <span>📁 ${escHtml(folderMap[c.raw?.FolderId] || '—')}</span>
-                  </div>
-                </div>
-                <div class="item-tags">
-                  ${(c.raw?.Login?.Fido2Credentials?.length || 0) > 0 ? '<span class="mini-tag passkey">🔑</span>' : ''}
-                  ${c.decrypted?.totp ? '<span class="mini-tag totp">🕐</span>' : ''}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        `).join('') || '<div class="empty-state">没有匹配的条目</div>'}
-      </div>
-    </div>
-  `;
-
-  // === A-Z Index click → scroll to section ===
-  container.querySelectorAll('.az-index-letter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const letter = btn.dataset.letter;
-      const section = document.getElementById(`letter-section-${letter}`);
-      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-
-  // === Scroll spy: highlight active letter ===
-  const mainContent = document.querySelector('.main-content');
-  if (mainContent && hasGroups) {
-    const onScroll = () => {
-      const strip = document.getElementById('az-index-strip');
-      if (!strip) return;
-      const sections = container.querySelectorAll('.letter-section');
-      let activeLetter = sortedLetters[0];
-      for (const sec of sections) {
-        const rect = sec.getBoundingClientRect();
-        if (rect.top <= 120) {
-          activeLetter = sec.id.replace('letter-section-', '');
-        }
-      }
-      strip.querySelectorAll('.az-index-letter').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.letter === activeLetter);
-      });
-    };
-    mainContent.addEventListener('scroll', onScroll, { passive: true });
-    // Also listen on window scroll for non-scrollable-container layouts
-    window.addEventListener('scroll', onScroll, { passive: true });
-    // Initial highlight
-    requestAnimationFrame(onScroll);
-  }
-
-  // Event delegation for item clicks
-  container.addEventListener('click', (e) => {
-    const item = e.target.closest('.vault-item');
-    if (!item) return;
-
-    // If clicking checkbox, toggle selection
-    if (e.target.classList.contains('item-select-cb')) {
-      const id = e.target.dataset.id;
-      if (e.target.checked) {
-        selectedItems.add(id);
-        item.classList.add('selected');
-      } else {
-        selectedItems.delete(id);
-        item.classList.remove('selected');
-      }
-      updateBatchBar();
-      return;
-    }
-
-    // Otherwise open detail drawer
-    const cipher = allDecryptedCiphers.find(c => c.id === item.dataset.id);
-    if (cipher) openDetailDrawer(cipher);
-  });
-
-  // Select all
-  $('#select-all-cb')?.addEventListener('change', (e) => {
-    const checked = e.target.checked;
-    filtered.forEach(c => {
-      if (checked) selectedItems.add(c.id);
-      else selectedItems.delete(c.id);
-    });
-    updateBatchBar();
-    renderAllItems();
-  });
-}
 
 // ========================
 // RENDER: DUPLICATES
@@ -2721,90 +3021,8 @@ function getDupSelectedItemIds() {
   return ids;
 }
 
-// ========================
-// RENDER: ORPHANS
-// ========================
-function renderOrphansView() {
-  const container = $('#view-orphans');
-  const orphans = analysisResult.orphans;
 
-  if (orphans.length === 0) {
-    container.innerHTML = `<div class="empty-state">${t('orphan.empty')}</div>`;
-    return;
-  }
 
-  // Filter orphans by search
-  let filteredOrphans = orphans;
-  if (searchQuery.trim()) {
-    filteredOrphans = orphans.filter(matchesSearch);
-  }
-
-  if (filteredOrphans.length === 0) {
-    container.innerHTML = searchQuery.trim()
-      ? `<div class="empty-state">🔍 ${t('orphan.empty')}</div>`
-      : `<div class="empty-state">${t('orphan.empty')}</div>`;
-    return;
-  }
-
-  const allSelected = filteredOrphans.length > 0 && filteredOrphans.every(c => selectedItems.has(c.id));
-
-  container.innerHTML = `
-    <div class="section-header">
-      <span class="section-title">
-        <label class="select-all-label">
-          <input type="checkbox" id="orphan-select-all-cb" ${allSelected ? 'checked' : ''} />
-          ${t('select.all')}
-        </label>
-        ${t('orphan.title')} · ${filteredOrphans.length} ${t('dup.items')}
-      </span>
-    </div>
-    ${filteredOrphans.map(item => {
-    const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
-    const checked = selectedItems.has(item.id) ? 'checked' : '';
-    return `
-      <div class="orphan-item selectable" data-id="${item.id}">
-        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
-        <div class="item-info">
-          <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
-          <div class="item-meta">
-            <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
-            <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
-          </div>
-        </div>
-      </div>`;
-  }).join('')}
-  `;
-
-  // Checkbox events
-  container.querySelectorAll('.item-cb').forEach(cb => {
-    cb.addEventListener('change', (e) => {
-      e.stopPropagation();
-      if (cb.checked) selectedItems.add(cb.dataset.id);
-      else selectedItems.delete(cb.dataset.id);
-      updateBatchBar();
-    });
-  });
-
-  // Select all — operate on filtered set
-  $('#orphan-select-all-cb')?.addEventListener('change', (e) => {
-    filteredOrphans.forEach(c => {
-      if (e.target.checked) selectedItems.add(c.id);
-      else selectedItems.delete(c.id);
-    });
-    updateBatchBar();
-    renderOrphansView();
-  });
-
-  // Click row to open detail (but not on checkbox)
-  container.querySelectorAll('.orphan-item').forEach(el => {
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('.item-cb')) return;
-      const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
-      if (cipher) openDetailDrawer(cipher);
-    });
-  });
-}
 
 // ========================
 // RENDER: CORRUPTED VIEW
@@ -3264,7 +3482,11 @@ function renderTypeFilteredView(viewName, typeId, title) {
   const items = allDecryptedCiphers.filter(c => (c.raw?.Type ?? c.raw?.type) === typeId);
 
   if (items.length === 0) {
-    container.innerHTML = `<div class="empty-state">📭 暂无${title.replace(/^[^\s]+\s/, '')}条目</div>`;
+    container.innerHTML = `<div class="empty-state">📭 暂无${title.replace(/^[^\s]+\s/, '')}条目</div>
+      <div style="text-align:center;margin-top:16px">
+        <button class="btn-primary create-item-btn" data-type="${typeId}" style="padding:10px 28px;border-radius:var(--radius-sm)">＋ 新建${title.replace(/^[^\s]+\s/, '')}</button>
+      </div>`;
+    container.querySelector('.create-item-btn')?.addEventListener('click', () => openCreateDrawer(typeId));
     return;
   }
 
@@ -3284,26 +3506,37 @@ function renderTypeFilteredView(viewName, typeId, title) {
   const getSubtitle = (item) => {
     const dec = item.decrypted;
     switch (typeId) {
+      case 1: { // Login
+        const user = dec?.username || '';
+        const uri = dec?.uris?.filter(Boolean)?.[0] || '';
+        const parts = [];
+        if (user) parts.push(`👤 ${user}`);
+        if (uri) parts.push(`🔗 ${uri.length > 40 ? uri.substring(0, 40) + '…' : uri}`);
+        return parts.join('  ') || '—';
+      }
       case 3: { // Card
-        const brand = dec?.cardBrand || dec?.brand || '';
-        const last4 = dec?.cardNumber?.slice(-4) || '';
+        const brand = dec?.card?.brand || '';
+        const last4 = dec?.card?.number?.slice(-4) || '';
         return brand ? `${brand} ****${last4}` : (last4 ? `****${last4}` : '—');
       }
       case 4: { // Identity
-        const parts = [dec?.firstName, dec?.lastName].filter(Boolean);
-        return parts.join(' ') || dec?.username || '—';
+        const id = dec?.identity || {};
+        const parts = [id.firstName, id.lastName].filter(Boolean);
+        return parts.join(' ') || id.username || id.email || '—';
       }
       case 2: // Secure Note
-        return dec?.notes ? dec.notes.substring(0, 60) + (dec.notes.length > 60 ? '...' : '') : '—';
-      case 5: // SSH Key
-        return dec?.username || '—';
+        return dec?.notes ? dec.notes.substring(0, 60) + (dec.notes.length > 60 ? '…' : '') : '—';
+      case 5: { // SSH Key
+        const ssh = dec?.sshKey || {};
+        return ssh.keyFingerprint || ssh.publicKey?.substring(0, 40) + '…' || '—';
+      }
       default:
         return '—';
     }
   };
 
   container.innerHTML = `
-    <div class="section-header">
+    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="${viewName}-select-all-cb" ${allSelected ? 'checked' : ''} />
@@ -3311,11 +3544,12 @@ function renderTypeFilteredView(viewName, typeId, title) {
         </label>
         ${title} · ${filtered.length} 项
       </span>
+      <button class="btn-primary create-item-btn" data-type="${typeId}" style="padding:6px 18px;font-size:0.82rem;border-radius:var(--radius-sm)">＋ 新建</button>
     </div>
     ${filtered.map(item => {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
       const name = escHtml(item.decrypted?.name || '(无标题)');
-      const subtitle = escHtml(getSubtitle(item));
+      const subtitle = getSubtitle(item);
       const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
       return `
       <div class="orphan-item selectable" data-id="${item.id}">
@@ -3330,6 +3564,9 @@ function renderTypeFilteredView(viewName, typeId, title) {
       </div>`;
     }).join('')}
   `;
+
+  // Create item button
+  container.querySelector('.create-item-btn')?.addEventListener('click', () => openCreateDrawer(typeId));
 
   // Checkbox events
   container.querySelectorAll('.item-cb').forEach(cb => {

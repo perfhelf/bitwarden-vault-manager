@@ -128,20 +128,41 @@
             <span class="nav-icon">📊</span>
             <span class="nav-label" data-i18n="nav.overview">总览</span>
           </button>
-          <button class="nav-item" data-view="all">
-            <span class="nav-icon">🗂️</span>
-            <span class="nav-label" data-i18n="nav.all">全部条目</span>
-            <span class="nav-badge" id="badge-all"></span>
+
+          <!-- ── 五大类型分栏 ── -->
+          <div class="sidebar-divider"></div>
+          <button class="nav-item" data-view="type-login">
+            <span class="nav-icon">🔐</span>
+            <span class="nav-label">登录</span>
+            <span class="nav-badge" id="badge-type-login"></span>
           </button>
+          <button class="nav-item" data-view="type-card">
+            <span class="nav-icon">💳</span>
+            <span class="nav-label">支付卡</span>
+            <span class="nav-badge" id="badge-type-card"></span>
+          </button>
+          <button class="nav-item" data-view="type-identity">
+            <span class="nav-icon">🪪</span>
+            <span class="nav-label">身份</span>
+            <span class="nav-badge" id="badge-type-identity"></span>
+          </button>
+          <button class="nav-item" data-view="type-note">
+            <span class="nav-icon">📝</span>
+            <span class="nav-label">安全笔记</span>
+            <span class="nav-badge" id="badge-type-note"></span>
+          </button>
+          <button class="nav-item" data-view="type-sshkey">
+            <span class="nav-icon">🔑</span>
+            <span class="nav-label">SSH 密钥</span>
+            <span class="nav-badge" id="badge-type-sshkey"></span>
+          </button>
+
+          <!-- ── 横切视图 ── -->
+          <div class="sidebar-divider"></div>
           <button class="nav-item" data-view="duplicates">
             <span class="nav-icon">🔀</span>
             <span class="nav-label" data-i18n="nav.duplicates">重复项</span>
             <span class="nav-badge warn" id="badge-dup"></span>
-          </button>
-          <button class="nav-item" data-view="orphans">
-            <span class="nav-icon">👻</span>
-            <span class="nav-label" data-i18n="nav.orphans">孤立项</span>
-            <span class="nav-badge" id="badge-orphan"></span>
           </button>
           <button class="nav-item" data-view="nofolder">
             <span class="nav-icon">📂</span>
@@ -169,29 +190,7 @@
             <span class="nav-badge" id="badge-dead-urls"></span>
           </button>
 
-          <!-- Special Types Section -->
-          <div class="sidebar-divider"></div>
-          <button class="nav-item" data-view="type-card">
-            <span class="nav-icon">💳</span>
-            <span class="nav-label">支付卡</span>
-            <span class="nav-badge" id="badge-type-card"></span>
-          </button>
-          <button class="nav-item" data-view="type-identity">
-            <span class="nav-icon">🪪</span>
-            <span class="nav-label">身份</span>
-            <span class="nav-badge" id="badge-type-identity"></span>
-          </button>
-          <button class="nav-item" data-view="type-note">
-            <span class="nav-icon">📝</span>
-            <span class="nav-label">安全笔记</span>
-            <span class="nav-badge" id="badge-type-note"></span>
-          </button>
-          <button class="nav-item" data-view="type-sshkey">
-            <span class="nav-icon">🔑</span>
-            <span class="nav-label">SSH 密钥</span>
-            <span class="nav-badge" id="badge-type-sshkey"></span>
-          </button>
-
+          <!-- ── 文件夹 ── -->
           <div class="sidebar-divider"></div>
           <div class="sidebar-section-header">
             <span class="sidebar-section-title" data-i18n="nav.folders">📁 文件夹</span>
@@ -255,9 +254,12 @@
 
         <!-- Views -->
         <div id="view-overview" class="content-view active"></div>
-        <div id="view-all" class="content-view"></div>
+        <div id="view-type-login" class="content-view"></div>
+        <div id="view-type-card" class="content-view"></div>
+        <div id="view-type-identity" class="content-view"></div>
+        <div id="view-type-note" class="content-view"></div>
+        <div id="view-type-sshkey" class="content-view"></div>
         <div id="view-duplicates" class="content-view"></div>
-        <div id="view-orphans" class="content-view"></div>
         <div id="view-nofolder" class="content-view"></div>
         <div id="view-health" class="content-view"></div>
         <div id="view-folder" class="content-view"></div>
@@ -265,10 +267,6 @@
         <div id="view-trash" class="content-view"></div>
         <div id="view-corrupted" class="content-view"></div>
         <div id="view-dead-urls" class="content-view"></div>
-        <div id="view-type-card" class="content-view"></div>
-        <div id="view-type-identity" class="content-view"></div>
-        <div id="view-type-note" class="content-view"></div>
-        <div id="view-type-sshkey" class="content-view"></div>
       </main>
     </div>
 

@@ -193,7 +193,10 @@ export class BitwardenClient {
       Card: c.Card || c.card,
       Identity: c.Identity || c.identity,
       SecureNote: c.SecureNote || c.secureNote,
+      SshKey: c.SshKey || c.sshKey || null,
       Fields: c.Fields || c.fields || [],
+      PasswordHistory: c.PasswordHistory || c.passwordHistory || [],
+      Key: c.Key || c.key || null,
     }));
 
     // Separate active and trashed items
@@ -275,9 +278,9 @@ export class BitwardenClient {
     // Override with our merged data (the actual modifications we want to make)
     payload.Type = src.Type ?? src.type ?? payload.Type ?? payload.type;
     payload.OrganizationId = src.OrganizationId || src.organizationId || payload.OrganizationId || payload.organizationId || null;
-    payload.FolderId = src.FolderId || src.folderId || payload.FolderId || payload.folderId || null;
+    payload.FolderId = 'FolderId' in src ? src.FolderId : ('folderId' in src ? src.folderId : (payload.FolderId || payload.folderId || null));
     payload.Name = src.Name || src.name || payload.Name || payload.name;
-    payload.Notes = src.Notes || src.notes || payload.Notes || payload.notes || null;
+    payload.Notes = 'Notes' in src ? src.Notes : ('notes' in src ? src.notes : (payload.Notes || payload.notes || null));
     payload.Favorite = src.Favorite ?? src.favorite ?? payload.Favorite ?? payload.favorite ?? false;
     payload.Reprompt = src.Reprompt ?? src.reprompt ?? payload.Reprompt ?? payload.reprompt ?? 0;
     payload.Fields = src.Fields || src.fields || payload.Fields || payload.fields || [];
@@ -316,10 +319,11 @@ export class BitwardenClient {
       delete payload.login;
     }
 
-    // Card/Identity/SecureNote (pass-through)
+    // Card/Identity/SecureNote/SshKey (pass-through)
     if (src.Card || src.card) { payload.Card = src.Card || src.card; delete payload.card; }
     if (src.Identity || src.identity) { payload.Identity = src.Identity || src.identity; delete payload.identity; }
     if (src.SecureNote || src.secureNote) { payload.SecureNote = src.SecureNote || src.secureNote; delete payload.secureNote; }
+    if (src.SshKey || src.sshKey) { payload.SshKey = src.SshKey || src.sshKey; delete payload.sshKey; }
 
     console.log(`[updateCipher] PUT /ciphers/${id} Key=${!!payload.Key}`, JSON.stringify(payload).substring(0, 1500));
 

@@ -34,6 +34,7 @@ export function analyzeCiphers(ciphers) {
       sameSiteDuplicateGroups: sameSiteDupes.length,
       totalDuplicateItems,
       orphanItems: orphans.length,
+      noFolderItems: ciphers.filter(c => !c.raw?.FolderId && !c.raw?.folderId).length,
     },
   };
 }
