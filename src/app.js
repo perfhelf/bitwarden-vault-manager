@@ -3013,11 +3013,13 @@ function isDomainWhitelisted(domain) {
 
 /**
  * ONE-SHOT URL liveness check.
- * Once deadUrlCheckDone = true, this function never runs again until page reload.
+ * Once started, will not run again — even if called concurrently.
  */
+let _deadUrlCheckRunning = false;
 async function checkDeadUrls() {
-  // ── Guard: one-shot only ──
-  if (deadUrlCheckDone) return;
+  // ── Guard: one-shot + no concurrent ──
+  if (deadUrlCheckDone || _deadUrlCheckRunning) return;
+  _deadUrlCheckRunning = true;
 
   deadUrlItems = [];
   updateSidebarBadges();
