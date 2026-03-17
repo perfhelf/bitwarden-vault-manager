@@ -329,8 +329,15 @@ function setLoginState(state, message) {
 // DASHBOARD ENTRY
 // ========================
 function enterDashboard() {
+  // ── Idempotency guard: if dashboard already showing, don't reset view ──
+  const dashEl = $('#dashboard-view');
+  if (dashEl.style.display === 'block') {
+    console.log('[enterDashboard] Already active, skipping re-init');
+    return;
+  }
+
   $('#login-view').style.display = 'none';
-  $('#dashboard-view').style.display = 'block';
+  dashEl.style.display = 'block';
 
   setupSidebarNav();
   setupSearch();
@@ -449,9 +456,6 @@ function setupSidebarNav() {
 }
 
 function switchView(view) {
-  if (currentView === 'dead-urls' && view !== 'dead-urls') {
-    console.warn('[switchView] JUMPING AWAY from dead-urls to:', view, new Error().stack);
-  }
   currentView = view;
 
   // Update nav active states
