@@ -404,6 +404,10 @@ function updateSidebarBadges() {
   if (issueCount > 0) $('#badge-health').classList.add('danger');
   const trashBadge = $('#badge-trash');
   if (trashBadge) trashBadge.textContent = allDecryptedTrash.length > 0 ? allDecryptedTrash.length : '';
+  // Corrupted badge
+  const corruptedCount = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name).length;
+  const corruptedBadge = $('#badge-corrupted');
+  if (corruptedBadge) corruptedBadge.textContent = corruptedCount > 0 ? corruptedCount : '';
 }
 
 // ========================
@@ -453,6 +457,7 @@ function switchView(view) {
     case 'folder': renderFolderView(); break;
     case 'credfile': renderCredFileView(); break;
     case 'trash': renderTrashView(); break;
+    case 'corrupted': renderCorruptedView(); break;
   }
 }
 
@@ -474,6 +479,7 @@ function setupSearch() {
         case 'nofolder': renderNoFolderView(); break;
         case 'folder': renderFolderView(); break;
         case 'trash': renderTrashView(); break;
+        case 'corrupted': renderCorruptedView(); break;
         case 'health': renderHealthView(); break;
       }
     }, 200);
@@ -2304,6 +2310,96 @@ function renderOrphansView() {
   });
 
   // Click row to open detail (but not on checkbox)
+  container.querySelectorAll('.orphan-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.item-cb')) return;
+      const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
+      if (cipher) openDetailDrawer(cipher);
+    });
+  });
+}
+
+// ========================
+// RENDER: CORRUPTED VIEW
+// ========================
+function renderCorruptedView() {
+  const container = $('#view-corrupted');
+  // Corrupted = decrypt error OR no title
+  const corrupted = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name);
+
+  if (corrupted.length === 0) {
+    container.innerHTML = '<div class="empty-state">✅ 未发现损坏条目</div>';
+    return;
+  }
+
+  let filtered = corrupted;
+  if (searchQuery.trim()) {
+    filtered = corrupted.filter(matchesSearch);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的损坏条目</div>';
+    return;
+  }
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selectedItems.has(c.id));
+
+  container.innerHTML = `
+    <div class="section-header">
+      <span class="section-title">
+        <label class="select-all-label">
+          <input type="checkbox" id="corrupted-select-all-cb" ${allSelected ? 'checked' : ''} />
+          ${t('select.all')}
+        </label>
+        💀 已损坏条目 · ${filtered.length} 项
+      </span>
+    </div>
+    <div class="corrupted-hint" style="padding:4px 16px 12px;font-size:0.82rem;color:var(--text-secondary)">
+      包含解密失败和无标题的条目。建议确认后移入回收站。
+    </div>
+    ${filtered.map(item => {
+      const checked = selectedItems.has(item.id) ? 'checked' : '';
+      const hasError = item.decrypted?.error;
+      const noName = !item.decrypted?.name;
+      const reason = hasError ? '🔐 解密失败' : '📛 无标题';
+      const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
+      return `
+      <div class="orphan-item selectable" data-id="${item.id}">
+        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
+        <div class="item-info">
+          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-meta">
+            <span class="orphan-tag" style="color:#f87171">${reason}</span>
+            <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
+            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : ''}
+            <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // Checkbox events
+  container.querySelectorAll('.item-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedItems.add(cb.dataset.id);
+      else selectedItems.delete(cb.dataset.id);
+      updateBatchBar();
+    });
+  });
+
+  // Select all
+  $('#corrupted-select-all-cb')?.addEventListener('change', (e) => {
+    filtered.forEach(c => {
+      if (e.target.checked) selectedItems.add(c.id);
+      else selectedItems.delete(c.id);
+    });
+    updateBatchBar();
+    renderCorruptedView();
+  });
+
+  // Click row to open detail
   container.querySelectorAll('.orphan-item').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.item-cb')) return;
