@@ -886,7 +886,7 @@ function renderFolderView() {
           <div class="item-name">${escHtml(c.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
-            ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${escHtml(c.decrypted.uris[0])}</span>` : ''}
+            ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${linkUri(c.decrypted.uris[0])}</span>` : ''}
           </div>
         </div>
         <div class="item-tags">
@@ -2225,7 +2225,7 @@ function renderAllItems() {
                   <div class="item-name">${escHtml(c.decrypted?.name || '(无标题)')}</div>
                   <div class="item-meta">
                     ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
-                    ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${escHtml(c.decrypted.uris[0])}</span>` : ''}
+                    ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${linkUri(c.decrypted.uris[0])}</span>` : ''}
                     <span>📁 ${escHtml(folderMap[c.raw?.FolderId] || '—')}</span>
                   </div>
                 </div>
@@ -2582,7 +2582,7 @@ function renderExactDupItem(item, gi, ii, isFirst) {
         <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
         <div class="item-meta">
           <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-          <span>🔗 ${uris.length > 0 ? escHtml(uris[0]) : '—'}</span>
+          <span>🔗 ${uris.length > 0 ? linkUri(uris[0]) : '—'}</span>
           ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} ${t('detail.passkey')}</span>` : ''}
           ${item.decrypted?.totp ? '<span class="has-totp">🕐 TOTP</span>' : ''}
           <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
@@ -2609,7 +2609,7 @@ function renderSiteDupItem(item, gi) {
         <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
         <div class="item-meta">
           <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-          <span>🔗 ${uris.length > 0 ? escHtml(uris[0]) : '—'}</span>
+          <span>🔗 ${uris.length > 0 ? linkUri(uris[0]) : '—'}</span>
           ${passkeys > 0 ? `<span class="has-passkey">🔑 ${passkeys} ${t('detail.passkey')}</span>` : ''}
           ${item.decrypted?.totp ? '<span class="has-totp">🕐 TOTP</span>' : ''}
           ${fields > 0 ? `<span class="has-fields">📝 ${fields} ${t('detail.section.fields')}</span>` : ''}
@@ -2689,7 +2689,7 @@ function renderOrphansView() {
           <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
+            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
             <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
           </div>
         </div>
@@ -2785,7 +2785,7 @@ function renderCorruptedView() {
           <div class="item-meta">
             ${reasonHtml}
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : ''}
+            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : ''}
             <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
           </div>
         </div>
@@ -2970,7 +2970,7 @@ function renderNoFolderView() {
           <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
           <div class="item-meta">
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : '<span class="orphan-tag">无URL</span>'}
+            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : '<span class="orphan-tag">无URL</span>'}
           </div>
         </div>
       </div>`;
@@ -3134,7 +3134,7 @@ function renderTrashView() {
             <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
             <div class="item-meta">
               <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-              ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
+              ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : `<span class="orphan-tag">${t('health.nourl')}</span>`}
               ${deletedAt ? `<span class="trash-date">🗓️ ${t('trash.deletedon')} ${deletedAt}</span>` : ''}
             </div>
           </div>
@@ -3843,6 +3843,20 @@ function escHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+/**
+ * Wrap a URI string as a clickable link (opens in new tab).
+ * Non-web URIs (androidapp://, iosapp://) are displayed as plain text.
+ */
+function linkUri(uri) {
+  if (!uri) return '';
+  const escaped = escHtml(uri);
+  // Only linkify http/https URLs
+  if (/^https?:\/\//i.test(uri)) {
+    return `<a href="${escAttr(uri)}" target="_blank" rel="noopener noreferrer" class="uri-link" onclick="event.stopPropagation()">${escaped}</a>`;
+  }
+  return escaped;
 }
 
 function escAttr(str) {

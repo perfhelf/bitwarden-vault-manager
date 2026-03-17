@@ -2472,6 +2472,17 @@ body {
   margin-bottom: 12px;
 }
 
+/* Clickable URI links in list views */
+.uri-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.uri-link:hover {
+  color: var(--brand-light);
+  text-decoration: underline;
+}
+
 /* ============================
    RESPONSIVE
    ============================ */
