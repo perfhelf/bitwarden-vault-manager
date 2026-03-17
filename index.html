@@ -131,6 +131,11 @@
 
           <!-- ── 五大类型分栏 ── -->
           <div class="sidebar-divider"></div>
+          <button class="nav-item" data-view="favorites">
+            <span class="nav-icon">⭐</span>
+            <span class="nav-label">收藏夹</span>
+            <span class="nav-badge" id="badge-favorites"></span>
+          </button>
           <button class="nav-item" data-view="type-login">
             <span class="nav-icon">🔐</span>
             <span class="nav-label">登录</span>
@@ -254,6 +259,7 @@
 
         <!-- Views -->
         <div id="view-overview" class="content-view active"></div>
+        <div id="view-favorites" class="content-view"></div>
         <div id="view-type-login" class="content-view"></div>
         <div id="view-type-card" class="content-view"></div>
         <div id="view-type-identity" class="content-view"></div>

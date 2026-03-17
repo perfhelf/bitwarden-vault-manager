@@ -439,6 +439,10 @@ function updateSidebarBadges() {
     const badge = $(`#badge-${viewName}`);
     if (badge) badge.textContent = count > 0 ? count : '';
   }
+  // Favorites badge
+  const favCount = allDecryptedCiphers.filter(c => c.raw?.Favorite || c.decrypted?.favorite).length;
+  const favBadge = $('#badge-favorites');
+  if (favBadge) favBadge.textContent = favCount > 0 ? favCount : '';
 }
 
 // ========================
@@ -480,6 +484,7 @@ function switchView(view) {
   // Render the view
   switch (view) {
     case 'overview': renderOverview(); break;
+    case 'favorites': renderFavoritesView(); break;
     case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
     case 'duplicates': renderDuplicatesView(); break;
     case 'nofolder': renderNoFolderView(); break;
@@ -509,6 +514,7 @@ function setupSearch() {
       // Re-render whichever view is active
       switch (currentView) {
         case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
+        case 'favorites': renderFavoritesView(); break;
         case 'duplicates': renderDuplicatesView(); break;
         case 'nofolder': renderNoFolderView(); break;
         case 'folder': renderFolderView(); break;
@@ -3587,6 +3593,103 @@ function renderTypeFilteredView(viewName, typeId, title) {
     });
     updateBatchBar();
     renderTypeFilteredView(viewName, typeId, title);
+  });
+
+  // Click row to open detail
+  container.querySelectorAll('.orphan-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.item-cb')) return;
+      const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
+      if (cipher) openDetailDrawer(cipher);
+    });
+  });
+}
+
+// ========================
+// RENDER: FAVORITES VIEW
+// ========================
+function renderFavoritesView() {
+  const container = $('#view-favorites');
+  const items = allDecryptedCiphers.filter(c => c.raw?.Favorite || c.decrypted?.favorite);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty-state">⭐ 暂无收藏条目<br><small style="color:var(--text-secondary)">在编辑条目时开启「收藏」即可添加到此列表</small></div>';
+    return;
+  }
+
+  let filtered = items;
+  if (searchQuery.trim()) {
+    filtered = items.filter(matchesSearch);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的收藏条目</div>';
+    return;
+  }
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selectedItems.has(c.id));
+
+  // Type icon helper
+  const typeIcon = (type) => ({ 1: '🔐', 2: '📝', 3: '💳', 4: '🪪', 5: '🔑' }[type] || '📄');
+
+  container.innerHTML = `
+    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+      <span class="section-title">
+        <label class="select-all-label">
+          <input type="checkbox" id="favorites-select-all-cb" ${allSelected ? 'checked' : ''} />
+          ${t('select.all')}
+        </label>
+        ⭐ 收藏夹 · ${filtered.length} 项
+      </span>
+    </div>
+    ${filtered.map(item => {
+      const checked = selectedItems.has(item.id) ? 'checked' : '';
+      const name = escHtml(item.decrypted?.name || '(无标题)');
+      const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
+      const icon = typeIcon(item.type);
+      const subtitle = item.type === 1
+        ? (item.decrypted?.username ? `👤 ${escHtml(item.decrypted.username)}` : '—')
+        : item.type === 3
+        ? (item.decrypted?.card?.brand || '支付卡')
+        : item.type === 4
+        ? ([item.decrypted?.identity?.firstName, item.decrypted?.identity?.lastName].filter(Boolean).join(' ') || '身份')
+        : item.type === 2
+        ? (item.decrypted?.notes?.substring(0, 40) || '安全笔记')
+        : item.type === 5
+        ? (item.decrypted?.sshKey?.keyFingerprint?.substring(0, 30) || 'SSH 密钥')
+        : '—';
+      return `
+      <div class="orphan-item selectable" data-id="${item.id}">
+        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
+        <div class="item-info">
+          <div class="item-name">${icon} ${name}</div>
+          <div class="item-meta">
+            <span>${subtitle}</span>
+            <span>📁 ${folder}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // Checkbox events
+  container.querySelectorAll('.item-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedItems.add(cb.dataset.id);
+      else selectedItems.delete(cb.dataset.id);
+      updateBatchBar();
+    });
+  });
+
+  // Select all
+  $('#favorites-select-all-cb')?.addEventListener('change', (e) => {
+    filtered.forEach(c => {
+      if (e.target.checked) selectedItems.add(c.id);
+      else selectedItems.delete(c.id);
+    });
+    updateBatchBar();
+    renderFavoritesView();
   });
 
   // Click row to open detail
