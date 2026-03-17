@@ -3690,6 +3690,45 @@ function renderTypeFilteredView(viewName, typeId, title) {
     }
   };
 
+  // === Group items by first letter (A-Z + #) ===
+  const letterGroups = {};
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (const c of filtered) {
+    const name = (c.decrypted?.name || '').trim();
+    let firstChar = name.charAt(0).toUpperCase();
+    if (!firstChar || !LETTERS.includes(firstChar)) firstChar = '#';
+    if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
+    letterGroups[firstChar].push(c);
+  }
+  const sortedLetters = Object.keys(letterGroups).sort((a, b) => {
+    if (a === '#') return 1; if (b === '#') return -1;
+    return a.localeCompare(b);
+  });
+  const hasGroups = sortedLetters.length > 0 && filtered.length > 0;
+
+  const renderItem = (item) => {
+    const checked = selectedItems.has(item.id) ? 'checked' : '';
+    const name = escHtml(item.decrypted?.name || '(无标题)');
+    const subtitle = getSubtitle(item);
+    const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
+    const hasPasskey = typeId === 1 && (item.raw?.Login?.Fido2Credentials?.length || 0) > 0;
+    const hasTotp = typeId === 1 && item.decrypted?.totp;
+    const tags = (hasPasskey ? '<span class="mini-tag passkey">🔑</span>' : '') +
+                 (hasTotp ? '<span class="mini-tag totp">🕐</span>' : '');
+    return `
+    <div class="orphan-item selectable" data-id="${item.id}">
+      <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
+      <div class="item-info">
+        <div class="item-name">${name}</div>
+        <div class="item-meta">
+          <span>${subtitle}</span>
+          <span>📁 ${folder}</span>
+        </div>
+      </div>
+      ${tags ? `<div class="item-tags">${tags}</div>` : ''}
+    </div>`;
+  };
+
   container.innerHTML = `
     <div class="section-header">
       <span class="section-title">
@@ -3701,33 +3740,57 @@ function renderTypeFilteredView(viewName, typeId, title) {
       </span>
       <button class="btn-primary create-item-btn" data-type="${typeId}">＋ 新建</button>
     </div>
-    ${filtered.map(item => {
-      const checked = selectedItems.has(item.id) ? 'checked' : '';
-      const name = escHtml(item.decrypted?.name || '(无标题)');
-      const subtitle = getSubtitle(item);
-      const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
-      // Tags (Login only: passkey + TOTP)
-      const hasPasskey = typeId === 1 && (item.raw?.Login?.Fido2Credentials?.length || 0) > 0;
-      const hasTotp = typeId === 1 && item.decrypted?.totp;
-      const tags = (hasPasskey ? '<span class="mini-tag passkey">🔑</span>' : '') +
-                   (hasTotp ? '<span class="mini-tag totp">🕐</span>' : '');
-      return `
-      <div class="orphan-item selectable" data-id="${item.id}">
-        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
-        <div class="item-info">
-          <div class="item-name">${name}</div>
-          <div class="item-meta">
-            <span>${subtitle}</span>
-            <span>📁 ${folder}</span>
-          </div>
+    <div class="all-items-body" style="position:relative">
+      ${hasGroups ? `
+        <div class="az-index-strip" id="az-index-strip-${viewName}">
+          ${sortedLetters.map(l => `<button class="az-index-letter" data-letter="${l}">${l}</button>`).join('')}
         </div>
-        ${tags ? `<div class="item-tags">${tags}</div>` : ''}
-      </div>`;
-    }).join('')}
+      ` : ''}
+      <div class="all-items-list">
+        ${sortedLetters.map(letter => `
+          <div class="letter-section" id="letter-section-${viewName}-${letter}">
+            <div class="letter-section-header">${letter}</div>
+            ${letterGroups[letter].map(renderItem).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `;
 
   // Create item button
   container.querySelector('.create-item-btn')?.addEventListener('click', () => openCreateDrawer(typeId));
+
+  // A-Z Index click → scroll to section
+  container.querySelectorAll('.az-index-letter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const letter = btn.dataset.letter;
+      const section = document.getElementById(`letter-section-${viewName}-${letter}`);
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // Scroll spy: highlight active letter
+  const mainContent = document.querySelector('.main-content');
+  if (mainContent && hasGroups) {
+    const onScroll = () => {
+      const strip = document.getElementById(`az-index-strip-${viewName}`);
+      if (!strip) return;
+      const sections = container.querySelectorAll('.letter-section');
+      let activeLetter = sortedLetters[0];
+      for (const sec of sections) {
+        const rect = sec.getBoundingClientRect();
+        if (rect.top <= 120) {
+          activeLetter = sec.id.replace(`letter-section-${viewName}-`, '');
+        }
+      }
+      strip.querySelectorAll('.az-index-letter').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.letter === activeLetter);
+      });
+    };
+    mainContent.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    requestAnimationFrame(onScroll);
+  }
 
   // Checkbox events
   container.querySelectorAll('.item-cb').forEach(cb => {
@@ -3878,17 +3941,23 @@ function renderNoFolderView() {
 
   const allSelected = filteredItems.length > 0 && filteredItems.every(c => selectedItems.has(c.id));
 
-  container.innerHTML = `
-    <div class="section-header">
-      <span class="section-title">
-        <label class="select-all-label">
-          <input type="checkbox" id="nofolder-select-all-cb" ${allSelected ? 'checked' : ''} />
-          全选
-        </label>
-        无文件夹条目 · ${filteredItems.length} 条
-      </span>
-    </div>
-    ${filteredItems.map(item => {
+  // === Group items by first letter (A-Z + #) ===
+  const letterGroups = {};
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (const c of filteredItems) {
+    const name = (c.decrypted?.name || '').trim();
+    let firstChar = name.charAt(0).toUpperCase();
+    if (!firstChar || !LETTERS.includes(firstChar)) firstChar = '#';
+    if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
+    letterGroups[firstChar].push(c);
+  }
+  const sortedLetters = Object.keys(letterGroups).sort((a, b) => {
+    if (a === '#') return 1; if (b === '#') return -1;
+    return a.localeCompare(b);
+  });
+  const hasGroups = sortedLetters.length > 0 && filteredItems.length > 0;
+
+  const renderItem = (item) => {
     const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
     const checked = selectedItems.has(item.id) ? 'checked' : '';
     return `
@@ -3902,8 +3971,66 @@ function renderNoFolderView() {
           </div>
         </div>
       </div>`;
-  }).join('')}
+  };
+
+  container.innerHTML = `
+    <div class="section-header">
+      <span class="section-title">
+        <label class="select-all-label">
+          <input type="checkbox" id="nofolder-select-all-cb" ${allSelected ? 'checked' : ''} />
+          全选
+        </label>
+        无文件夹条目 · ${filteredItems.length} 条
+      </span>
+    </div>
+    <div class="all-items-body" style="position:relative">
+      ${hasGroups ? `
+        <div class="az-index-strip" id="az-index-strip-nofolder">
+          ${sortedLetters.map(l => `<button class="az-index-letter" data-letter="${l}">${l}</button>`).join('')}
+        </div>
+      ` : ''}
+      <div class="all-items-list">
+        ${sortedLetters.map(letter => `
+          <div class="letter-section" id="letter-section-nofolder-${letter}">
+            <div class="letter-section-header">${letter}</div>
+            ${letterGroups[letter].map(renderItem).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `;
+
+  // A-Z Index click → scroll to section
+  container.querySelectorAll('.az-index-letter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const letter = btn.dataset.letter;
+      const section = document.getElementById(`letter-section-nofolder-${letter}`);
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // Scroll spy: highlight active letter
+  const mainContent = document.querySelector('.main-content');
+  if (mainContent && hasGroups) {
+    const onScroll = () => {
+      const strip = document.getElementById('az-index-strip-nofolder');
+      if (!strip) return;
+      const sections = container.querySelectorAll('.letter-section');
+      let activeLetter = sortedLetters[0];
+      for (const sec of sections) {
+        const rect = sec.getBoundingClientRect();
+        if (rect.top <= 120) {
+          activeLetter = sec.id.replace('letter-section-nofolder-', '');
+        }
+      }
+      strip.querySelectorAll('.az-index-letter').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.letter === activeLetter);
+      });
+    };
+    mainContent.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    requestAnimationFrame(onScroll);
+  }
 
   // Checkbox events
   container.querySelectorAll('.item-cb').forEach(cb => {
