@@ -3119,7 +3119,8 @@ async function checkDeadUrls() {
 
   deadUrlCheckDone = true;
   updateSidebarBadges();
-  if (currentView === 'dead-urls') renderDeadUrlsView();
+  // Re-render results — use switchView to ensure container stays visible
+  if (currentView === 'dead-urls') switchView('dead-urls');
 }
 
 // ========================
