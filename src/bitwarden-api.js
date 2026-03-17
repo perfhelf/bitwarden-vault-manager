@@ -241,121 +241,149 @@ export class BitwardenClient {
       console.warn(`[updateCipher] GET /ciphers/${id} failed, using source data:`, e.message);
     }
 
-    // Step 2: Build payload starting from the current (fresh) data, overriding with our changes
     const base = current || src;
-    const payload = {};
+    const g = (obj, ...keys) => { for (const k of keys) { if (obj && obj[k] != null) return obj[k]; } return null; };
 
-    // Copy ALL fields from the fresh GET response (this includes Key, etc.)
-    if (current) {
-      Object.assign(payload, current);
-    }
+    // Step 2: Build a clean camelCase payload matching official Bitwarden CipherRequest spec
+    const revDate = g(base, 'RevisionDate', 'revisionDate', 'LastKnownRevisionDate', 'lastKnownRevisionDate');
+    const payload = {
+      type: g(src, 'Type', 'type') ?? g(base, 'Type', 'type'),
+      organizationId: g(src, 'OrganizationId', 'organizationId') || g(base, 'OrganizationId', 'organizationId') || null,
+      folderId: 'FolderId' in src ? src.FolderId : ('folderId' in src ? src.folderId : (g(base, 'FolderId', 'folderId') || null)),
+      name: g(src, 'Name', 'name') || g(base, 'Name', 'name'),
+      notes: 'Notes' in src ? src.Notes : ('notes' in src ? src.notes : (g(base, 'Notes', 'notes') || null)),
+      favorite: (src.Favorite ?? src.favorite ?? g(base, 'Favorite', 'favorite')) ?? false,
+      reprompt: (src.Reprompt ?? src.reprompt ?? g(base, 'Reprompt', 'reprompt')) ?? 0,
+      lastKnownRevisionDate: revDate || new Date().toISOString(),
+    };
 
-    // Remove response-only fields that must not be in PUT body
-    const removeKeys = [
-      'id', 'Id', 'object', 'Object',
-      'edit', 'Edit', 'viewPassword', 'ViewPassword',
-      'permissions', 'Permissions',
-      'archivedDate', 'ArchivedDate',
-      'attachments', 'Attachments',
-      'deletedDate', 'DeletedDate',
-      'data', 'Data',
-      'sizeName', 'SizeName',
-    ];
-    for (const key of removeKeys) {
-      delete payload[key];
-    }
-
-    // Set LastKnownRevisionDate from fresh data
-    const revDate = base.RevisionDate || base.revisionDate || base.LastKnownRevisionDate;
-    payload.LastKnownRevisionDate = revDate || new Date().toISOString();
-    delete payload.revisionDate;
-    delete payload.RevisionDate;
-    delete payload.creationDate;
-    delete payload.CreationDate;
-
-    // Override with our merged data (the actual modifications we want to make)
-    payload.Type = src.Type ?? src.type ?? payload.Type ?? payload.type;
-    payload.OrganizationId = src.OrganizationId || src.organizationId || payload.OrganizationId || payload.organizationId || null;
-    payload.FolderId = 'FolderId' in src ? src.FolderId : ('folderId' in src ? src.folderId : (payload.FolderId || payload.folderId || null));
-    payload.Name = src.Name || src.name || payload.Name || payload.name;
-    payload.Notes = 'Notes' in src ? src.Notes : ('notes' in src ? src.notes : (payload.Notes || payload.notes || null));
-    payload.Favorite = src.Favorite ?? src.favorite ?? payload.Favorite ?? payload.favorite ?? false;
-    payload.Reprompt = src.Reprompt ?? src.reprompt ?? payload.Reprompt ?? payload.reprompt ?? 0;
-    payload.Fields = src.Fields || src.fields || payload.Fields || payload.fields || [];
-
-    // Ensure Key is present (critical for per-cipher encryption)
-    const keyVal = src.Key || src.key || (current && (current.Key || current.key)) || null;
+    // Key (critical for per-cipher encryption items)
+    const keyVal = g(src, 'Key', 'key') || (current && g(current, 'Key', 'key')) || null;
     if (keyVal) {
-      payload.Key = keyVal;
+      payload.key = keyVal;
     }
-    // Clean up lowercase duplicates
-    delete payload.type;
-    delete payload.organizationId;
-    delete payload.folderId;
-    delete payload.name;
-    delete payload.notes;
-    delete payload.favorite;
-    delete payload.reprompt;
-    delete payload.fields;
-    delete payload.key;
 
-    // Login-type fields: MERGE into fresh GET Login, don't replace entirely
-    const srcLogin = src.Login || src.login;
+    // Fields
+    const srcFields = g(src, 'Fields', 'fields') || g(base, 'Fields', 'fields') || [];
+    payload.fields = srcFields.map(f => ({
+      type: f.Type ?? f.type ?? 0,
+      name: f.Name || f.name || null,
+      value: f.Value || f.value || null,
+      linkedId: f.LinkedId ?? f.linkedId ?? null,
+    }));
+
+    // Password history
+    const srcPH = g(src, 'PasswordHistory', 'passwordHistory') || g(base, 'PasswordHistory', 'passwordHistory') || null;
+    payload.passwordHistory = srcPH ? srcPH.map(ph => ({
+      lastUsedDate: ph.LastUsedDate || ph.lastUsedDate || null,
+      password: ph.Password || ph.password || null,
+    })) : null;
+
+    // Login
+    const srcLogin = g(src, 'Login', 'login');
     if (srcLogin) {
-      const freshLogin = (current && (current.Login || current.login)) || {};
-      // Start from the full fresh GET Login (preserves all API fields)
-      payload.Login = { ...freshLogin };
-      // Override only the fields we manage
-      if ('Username' in srcLogin || 'username' in srcLogin)
-        payload.Login.Username = srcLogin.Username ?? srcLogin.username ?? payload.Login.Username ?? null;
-      if ('Password' in srcLogin || 'password' in srcLogin)
-        payload.Login.Password = srcLogin.Password ?? srcLogin.password ?? payload.Login.Password ?? null;
-      if ('PasswordRevisionDate' in srcLogin || 'passwordRevisionDate' in srcLogin)
-        payload.Login.PasswordRevisionDate = srcLogin.PasswordRevisionDate || srcLogin.passwordRevisionDate || payload.Login.PasswordRevisionDate || null;
-      if ('Totp' in srcLogin || 'totp' in srcLogin)
-        payload.Login.Totp = srcLogin.Totp ?? srcLogin.totp ?? payload.Login.Totp ?? null;
-      if (srcLogin.Uris || srcLogin.uris) {
-        const srcUris = srcLogin.Uris || srcLogin.uris || [];
-        payload.Login.Uris = srcUris.map(u => {
-          // If the URI object already has a checksum, it's an unchanged original — pass through as-is
-          if (u.UriChecksum || u.uriChecksum) {
-            return {
-              Uri: u.Uri || u.uri || null,
-              Match: u.Match ?? u.match ?? null,
-              UriChecksum: u.UriChecksum || u.uriChecksum || null,
-            };
-          }
-          // New or changed URI — no checksum needed, server will compute
-          return {
-            Uri: u.Uri || u.uri || null,
-            Match: u.Match ?? u.match ?? null,
-          };
-        });
+      const freshLogin = current ? g(current, 'Login', 'login') || {} : {};
+      // Merge: start from fresh, override with our changes
+      const login = {};
+      login.username = g(srcLogin, 'Username', 'username') ?? g(freshLogin, 'Username', 'username') ?? null;
+      login.password = g(srcLogin, 'Password', 'password') ?? g(freshLogin, 'Password', 'password') ?? null;
+      login.passwordRevisionDate = g(srcLogin, 'PasswordRevisionDate', 'passwordRevisionDate') || g(freshLogin, 'PasswordRevisionDate', 'passwordRevisionDate') || null;
+      login.totp = g(srcLogin, 'Totp', 'totp') ?? g(freshLogin, 'Totp', 'totp') ?? null;
+      login.autofillOnPageLoad = g(srcLogin, 'AutofillOnPageLoad', 'autofillOnPageLoad') ?? g(freshLogin, 'AutofillOnPageLoad', 'autofillOnPageLoad') ?? null;
+
+      // URIs
+      const srcUris = g(srcLogin, 'Uris', 'uris') || g(freshLogin, 'Uris', 'uris') || [];
+      login.uris = srcUris.map(u => {
+        const uriObj = {
+          uri: g(u, 'Uri', 'uri') || null,
+          match: u.Match ?? u.match ?? null,
+        };
+        // Preserve uriChecksum for unchanged URIs
+        const checksum = g(u, 'UriChecksum', 'uriChecksum');
+        if (checksum) {
+          uriObj.uriChecksum = checksum;
+        }
+        return uriObj;
+      });
+
+      // Fido2 credentials — preserve from fresh GET, override if src has them
+      const fido2 = g(srcLogin, 'Fido2Credentials', 'fido2Credentials') || g(freshLogin, 'Fido2Credentials', 'fido2Credentials') || null;
+      if (fido2) {
+        login.fido2Credentials = fido2.map(k => ({
+          credentialId: g(k, 'CredentialId', 'credentialId') || null,
+          keyType: g(k, 'KeyType', 'keyType') || null,
+          keyAlgorithm: g(k, 'KeyAlgorithm', 'keyAlgorithm') || null,
+          keyCurve: g(k, 'KeyCurve', 'keyCurve') || null,
+          keyValue: g(k, 'KeyValue', 'keyValue') || null,
+          rpId: g(k, 'RpId', 'rpId') || null,
+          rpName: g(k, 'RpName', 'rpName') || null,
+          counter: g(k, 'Counter', 'counter') || null,
+          userHandle: g(k, 'UserHandle', 'userHandle') || null,
+          userName: g(k, 'UserName', 'userName') || null,
+          userDisplayName: g(k, 'UserDisplayName', 'userDisplayName') || null,
+          discoverable: g(k, 'Discoverable', 'discoverable') || null,
+          creationDate: g(k, 'CreationDate', 'creationDate') || null,
+        }));
       }
-      if (srcLogin.Fido2Credentials || srcLogin.fido2Credentials)
-        payload.Login.Fido2Credentials = srcLogin.Fido2Credentials || srcLogin.fido2Credentials || payload.Login.Fido2Credentials || [];
-      delete payload.login;
+
+      payload.login = login;
     }
 
-    // Card/Identity/SecureNote/SshKey: merge into fresh GET data
-    if (src.Card || src.card) {
-      const freshCard = (current && (current.Card || current.card)) || {};
-      payload.Card = { ...freshCard, ...(src.Card || src.card) };
-      delete payload.card;
-    }
-    if (src.Identity || src.identity) {
-      const freshId = (current && (current.Identity || current.identity)) || {};
-      payload.Identity = { ...freshId, ...(src.Identity || src.identity) };
-      delete payload.identity;
-    }
-    if (src.SecureNote || src.secureNote) { payload.SecureNote = src.SecureNote || src.secureNote; delete payload.secureNote; }
-    if (src.SshKey || src.sshKey) {
-      const freshSsh = (current && (current.SshKey || current.sshKey)) || {};
-      payload.SshKey = { ...freshSsh, ...(src.SshKey || src.sshKey) };
-      delete payload.sshKey;
+    // Card
+    const srcCard = g(src, 'Card', 'card');
+    if (srcCard) {
+      const freshCard = current ? g(current, 'Card', 'card') || {} : {};
+      const merged = { ...freshCard, ...srcCard };
+      payload.card = {
+        cardholderName: g(merged, 'CardholderName', 'cardholderName') || null,
+        brand: g(merged, 'Brand', 'brand') || null,
+        number: g(merged, 'Number', 'number') || null,
+        expMonth: g(merged, 'ExpMonth', 'expMonth') || null,
+        expYear: g(merged, 'ExpYear', 'expYear') || null,
+        code: g(merged, 'Code', 'code') || null,
+      };
+    } else {
+      payload.card = null;
     }
 
-    console.log(`[updateCipher] PUT /ciphers/${id} Key=${!!payload.Key}`, JSON.stringify(payload).substring(0, 1500));
+    // Identity
+    const srcId = g(src, 'Identity', 'identity');
+    if (srcId) {
+      const freshId = current ? g(current, 'Identity', 'identity') || {} : {};
+      const merged = { ...freshId, ...srcId };
+      const idFields = ['title','firstName','middleName','lastName','address1','address2','address3','city','state','postalCode','country','company','email','phone','ssn','username','passportNumber','licenseNumber'];
+      payload.identity = {};
+      for (const f of idFields) {
+        const upper = f.charAt(0).toUpperCase() + f.slice(1);
+        payload.identity[f] = g(merged, upper, f) || null;
+      }
+    } else {
+      payload.identity = null;
+    }
+
+    // SecureNote
+    const srcSN = g(src, 'SecureNote', 'secureNote');
+    if (srcSN) {
+      payload.secureNote = { type: srcSN.Type ?? srcSN.type ?? 0 };
+    } else {
+      payload.secureNote = null;
+    }
+
+    // SshKey
+    const srcSsh = g(src, 'SshKey', 'sshKey');
+    if (srcSsh) {
+      const freshSsh = current ? g(current, 'SshKey', 'sshKey') || {} : {};
+      const merged = { ...freshSsh, ...srcSsh };
+      payload.sshKey = {
+        privateKey: g(merged, 'PrivateKey', 'privateKey') || null,
+        publicKey: g(merged, 'PublicKey', 'publicKey') || null,
+        keyFingerprint: g(merged, 'KeyFingerprint', 'keyFingerprint') || null,
+      };
+    } else {
+      payload.sshKey = null;
+    }
+
+    console.log(`[updateCipher] PUT /ciphers/${id} key=${!!payload.key}`, JSON.stringify(payload).substring(0, 2000));
 
     const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`, {
       method: 'PUT',
@@ -365,7 +393,7 @@ export class BitwardenClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       console.error(`[updateCipher] FAILED for ${id}:`, JSON.stringify(err));
-      throw new Error(`Update cipher failed: ${res.status} - ${err.Message || JSON.stringify(err)}`);
+      throw new Error(`Update cipher failed: ${res.status} - ${err.message || err.Message || JSON.stringify(err)}`);
     }
     return res.json();
   }
