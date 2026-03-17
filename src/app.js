@@ -593,16 +593,7 @@ function setupBatchOps() {
   $('#batch-cancel-btn').addEventListener('click', () => {
     selectedItems.clear();
     updateBatchBar();
-    if (currentView === 'all') renderAllItems();
-    else if (currentView === 'folder') renderFolderView();
-    else if (currentView === 'orphans') renderOrphansView();
-    else if (currentView === 'nofolder') renderNoFolderView();
-    else if (currentView === 'trash') renderTrashView();
-    else if (currentView.startsWith('type-')) {
-      const tMap = { 'type-card': [3, '💳 支付卡'], 'type-identity': [4, '🪪 身份'], 'type-note': [2, '📝 安全笔记'], 'type-sshkey': [5, '🔑 SSH 密钥'] };
-      const [tid, tlabel] = tMap[currentView] || [0, ''];
-      renderTypeFilteredView(currentView, tid, tlabel);
-    }
+    switchView(currentView);
   });
 
   $('#batch-delete-btn').addEventListener('click', () => {
@@ -617,6 +608,7 @@ function setupBatchOps() {
 
           // Optimistic UI update — instantly remove from in-memory data
           allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+          deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
           analysisResult = analyzeCiphers(allDecryptedCiphers);
           healthResult = analyzeHealth(allDecryptedCiphers);
           selectedItems.clear();
@@ -2498,6 +2490,7 @@ function renderDuplicatesView() {
         try {
           const deleteSet = new Set(ids);
           allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+          deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
           analysisResult = analyzeCiphers(allDecryptedCiphers);
           healthResult = analyzeHealth(allDecryptedCiphers);
           updateSidebarBadges();
@@ -4040,6 +4033,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
     // Optimistic UI update
     const deleteSet = new Set(safeToDelete);
     allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+    deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
     analysisResult = analyzeCiphers(allDecryptedCiphers);
     healthResult = analyzeHealth(allDecryptedCiphers);
     updateSidebarBadges();
