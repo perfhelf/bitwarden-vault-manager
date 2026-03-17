@@ -2671,6 +2671,13 @@ async function handleMerge(groups) {
         return new Date(b.raw?.RevisionDate || 0) - new Date(a.raw?.RevisionDate || 0);
       });
 
+      // Safety guard: skip sub-groups where passwords differ
+      const passwords = new Set(sorted.map(i => i.decrypted?.password || ''));
+      if (passwords.size > 1) {
+        showToast(`⚠️ ${username || '—'} @ ${group.matchKey}：条目密码不同，请检查`, 'warning');
+        continue;
+      }
+
       siteMergeGroups.push({
         type: 'same_site',
         label: `同站合并: ${username || '—'} @ ${group.matchKey}`,
@@ -2869,6 +2876,12 @@ async function handleSingleMerge(groups, gi, btnEl) {
     const usernames = new Set(group.items.map(i => i.decrypted?.username || ''));
     if (usernames.size > 1) {
       showToast('⛔ 不同用户名的条目无法合并，以防止凭据丢失', 'warning');
+      return;
+    }
+    // Same username but different passwords → warn and block
+    const passwords = new Set(group.items.map(i => i.decrypted?.password || ''));
+    if (passwords.size > 1) {
+      showToast('⚠️ 条目密码不同，请检查', 'warning');
       return;
     }
   }
