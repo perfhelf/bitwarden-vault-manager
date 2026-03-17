@@ -30,6 +30,7 @@ let isDemoMode = false;
 let isMergeLocked = false; // Lock to prevent concurrent merge operations
 let deadUrlItems = []; // Items whose URLs failed liveness check
 let deadUrlCheckDone = false; // Whether the check has completed
+let deadUrlCheckProgress = { checked: 0, total: 0 }; // Progress tracking
 
 // --- DOM ---
 const $ = (sel) => document.querySelector(sel);
@@ -3073,14 +3074,22 @@ async function checkDeadUrls() {
   const CONCURRENCY = 10;
   const domains = Array.from(domainMap.keys());
   const deadDomains = new Set();
-  let checked = 0;
-  const total = domains.length;
+  deadUrlCheckProgress = { checked: 0, total: domains.length };
 
   const updateProgress = () => {
     const badge = document.querySelector('[data-view="dead-urls"] .badge');
-    if (badge) badge.textContent = `${checked}/${total}`;
+    if (badge) badge.textContent = `${deadUrlCheckProgress.checked}/${deadUrlCheckProgress.total}`;
+    // Update progress bar if user is viewing this page
+    const bar = document.getElementById('dead-url-progress-fill');
+    if (bar) {
+      const pct = deadUrlCheckProgress.total > 0 ? (deadUrlCheckProgress.checked / deadUrlCheckProgress.total * 100) : 0;
+      bar.style.width = `${pct}%`;
+    }
+    const label = document.getElementById('dead-url-progress-label');
+    if (label) label.textContent = `${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} 个域名`;
   };
   updateProgress();
+  if (currentView === 'dead-urls') renderDeadUrlsView();
 
   for (let i = 0; i < domains.length; i += CONCURRENCY) {
     const batch = domains.slice(i, i + CONCURRENCY);
@@ -3088,7 +3097,7 @@ async function checkDeadUrls() {
       batch.map(async (domain) => {
         const alive = await isDomainAlive(domain);
         if (!alive) deadDomains.add(domain);
-        checked++;
+        deadUrlCheckProgress.checked++;
         updateProgress();
       })
     );
@@ -3097,6 +3106,14 @@ async function checkDeadUrls() {
   for (const [domain, items] of domainMap) {
     if (deadDomains.has(domain)) deadUrlItems.push(...items);
   }
+
+  // Dedup by item ID — prevent same item appearing multiple times
+  const seenIds = new Set();
+  deadUrlItems = deadUrlItems.filter(item => {
+    if (seenIds.has(item.id)) return false;
+    seenIds.add(item.id);
+    return true;
+  });
 
   deadUrlCheckDone = true;
   updateSidebarBadges();
@@ -3110,12 +3127,19 @@ function renderDeadUrlsView() {
   const container = $('#view-dead-urls');
 
   if (!deadUrlCheckDone) {
+    const pct = deadUrlCheckProgress.total > 0 ? (deadUrlCheckProgress.checked / deadUrlCheckProgress.total * 100).toFixed(0) : 0;
     container.innerHTML = `
       <div class="empty-state">
         <div style="font-size:2rem;margin-bottom:12px">🔍</div>
         <div>正在检测 URL 连通性…</div>
-        <div style="font-size:0.82rem;color:var(--text-secondary);margin-top:8px">
-          系统正在后台逐一检测所有条目的链接，请稍候。
+        <div style="width:260px;height:8px;background:var(--bg-secondary);border-radius:4px;margin:16px auto 8px;overflow:hidden">
+          <div id="dead-url-progress-fill" style="height:100%;background:linear-gradient(90deg,var(--primary),#a855f7);border-radius:4px;transition:width 0.3s ease;width:${pct}%"></div>
+        </div>
+        <div id="dead-url-progress-label" style="font-size:0.82rem;color:var(--text-secondary)">
+          ${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} 个域名
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">
+          白名单域名已跳过，仅检测未知域名
         </div>
       </div>`;
     return;
