@@ -1691,15 +1691,30 @@ async function deleteCurrentCipher(cipher) {
     '删除条目',
     `确认删除「${cipher.decrypted?.name || '(无标题)'}」？\n条目将移入回收站，30天内可恢复。`,
     async () => {
+      const deleteId = cipher.id;
+
+      // ── Phase 1: 乐观热更新 ──
+      allDecryptedCiphers = allDecryptedCiphers.filter(c => c.id !== deleteId);
+      deadUrlItems = deadUrlItems.filter(c => c.id !== deleteId);
+      analysisResult = analyzeCiphers(allDecryptedCiphers);
+      healthResult = analyzeHealth(allDecryptedCiphers);
+      updateSidebarBadges();
+      closeDetailDrawer();
+      switchView(currentView);
+      showToast('✅ 已删除，已移入回收站', 'success');
+
+      // ── Phase 2: 后台服务端删除 ──
       try {
-        await client.softDeleteBulk([cipher.id]);
-        showToast('✅ 已删除，已移入回收站', 'success');
-        closeDetailDrawer();
-        await resyncVault();
+        await client.softDeleteBulk([deleteId]);
       } catch (err) {
-        console.error('Delete error:', err);
-        showToast(`❌ 删除失败: ${err.message}`, 'error');
+        console.error('[Delete] Server softDeleteBulk failed:', err);
+        showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+        await resyncVault();
+        return;
       }
+
+      // ── Phase 3: 后台 resync ──
+      resyncVault();
     }
   );
 }
