@@ -2953,16 +2953,10 @@ async function checkDeadUrls() {
     );
   }
 
-  // Collect all items whose domain is dead (deduplicate by cipher ID)
-  const seenIds = new Set();
+  // Collect all items whose domain is dead
   for (const [domain, items] of domainMap) {
     if (deadDomains.has(domain)) {
-      for (const item of items) {
-        if (!seenIds.has(item.id)) {
-          seenIds.add(item.id);
-          deadUrlItems.push(item);
-        }
-      }
+      deadUrlItems.push(...items);
     }
   }
 
