@@ -1822,7 +1822,7 @@ function renderOverview() {
       </div>
       <div class="health-issues-summary">
         ${health.issues.map(i => `
-          <div class="health-issue-row">
+          <div class="health-issue-row clickable" data-health-filter="${i.id}" style="cursor:pointer">
             <span class="issue-dot ${i.severity}"></span>
             <span class="issue-count">${i.count}</span>
             <span>${i.label}</span>
@@ -1899,6 +1899,26 @@ function renderOverview() {
     switchView('all');
     $$('.filter-tag').forEach(t => {
       t.classList.toggle('active', t.dataset.filter === 'no-folder');
+    });
+  });
+
+  // Health issue row click → jump to filtered all view
+  const healthFilterMap = { 'weak-pw': 'weak-pw', 'empty-pw': 'empty-pw', 'http': 'http-uri', 'no-url': 'no-url', 'no-name': 'no-name', 'decrypt-fail': 'decrypt-fail' };
+  container.querySelectorAll('.health-issue-row[data-health-filter]').forEach(row => {
+    row.addEventListener('click', () => {
+      const healthId = row.dataset.healthFilter;
+      const filterId = healthFilterMap[healthId];
+      if (filterId) {
+        activeFilters.clear();
+        activeFilters.add(filterId);
+        switchView('all');
+        $$('.filter-tag').forEach(t => {
+          t.classList.toggle('active', t.dataset.filter === filterId);
+        });
+      } else {
+        // For reused-pw, stale — go to health view
+        switchView('health');
+      }
     });
   });
 }

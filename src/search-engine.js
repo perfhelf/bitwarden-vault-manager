@@ -22,6 +22,7 @@ export const QUICK_FILTERS = [
     const uris = c.decrypted?.uris || [];
     return uris.some(u => u && u.startsWith('http://'));
   }},
+  { id: 'decrypt-fail', label: '解密失败', icon: '💀', test: c => !!c.decrypted?.error },
 ];
 
 /**

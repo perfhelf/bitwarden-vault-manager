@@ -60,6 +60,10 @@ export function analyzeHealth(ciphers) {
   const noName = ciphers.filter(c => !c.decrypted?.name || c.decrypted.name.trim() === '');
   if (noName.length) issues.push({ id: 'no-name', severity: 'low', label: t('health.notitle'), count: noName.length, items: noName });
 
+  // 8. Decrypt failed
+  const decryptFailed = ciphers.filter(c => !!c.decrypted?.error);
+  if (decryptFailed.length) issues.push({ id: 'decrypt-fail', severity: 'high', label: '解密失败', count: decryptFailed.length, items: decryptFailed });
+
   // Calculate score (100 = perfect)
   const highCount = issues.filter(i => i.severity === 'high').reduce((s, i) => s + i.count, 0);
   const medCount = issues.filter(i => i.severity === 'medium').reduce((s, i) => s + i.count, 0);
