@@ -2305,7 +2305,7 @@ async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5, logEntr
     }
   }
   const errMsg = lastErr?.message || 'Unknown error';
-  console.warn(`Field decrypt failed after ${maxRetries} retries:`, errMsg);
+  console.debug(`Field decrypt failed after ${maxRetries} retries:`, errMsg);
   if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'fail', detail: `${maxRetries}次重试后失败: ${errMsg}` });
   return { __decryptFailed: true, error: errMsg };
 }
