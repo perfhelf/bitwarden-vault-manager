@@ -2694,3 +2694,107 @@ body {
   color: var(--text-secondary);
   opacity: 0.7;
 }
+
+/* ============================
+   A-Z QUICK INDEX (All Items)
+   ============================ */
+.all-items-body {
+  position: relative;
+}
+
+.all-items-list {
+  padding-right: 32px; /* Make room for the index strip */
+}
+
+/* Letter Section Headers */
+.letter-section {
+  margin-bottom: 4px;
+}
+
+.letter-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--brand-light, #93b4f5);
+  background: var(--bg-main, #0d0d1a);
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--brand, #175DDC);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* A-Z Index Strip */
+.az-index-strip {
+  position: fixed;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 3px;
+  background: var(--bg-card, #1a1a2e);
+  background: color-mix(in srgb, var(--bg-card, #1a1a2e) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border, #2a2d3a);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+
+.az-index-letter {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted, #666);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.az-index-letter:hover {
+  color: var(--brand-light, #93b4f5);
+  background: var(--bg-hover, rgba(255,255,255,0.06));
+  transform: scale(1.15);
+}
+
+.az-index-letter.active {
+  color: #fff;
+  background: var(--brand, #175DDC);
+  box-shadow: 0 0 8px rgba(23, 93, 220, 0.4);
+  transform: scale(1.2);
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 768px) {
+  .all-items-list {
+    padding-right: 24px;
+  }
+
+  .az-index-strip {
+    right: 2px;
+    padding: 4px 2px;
+    gap: 0;
+    border-radius: 12px;
+  }
+
+  .az-index-letter {
+    width: 18px;
+    height: 18px;
+    font-size: 0.55rem;
+  }
+}
+

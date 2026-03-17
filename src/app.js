@@ -2175,6 +2175,30 @@ function renderAllItems() {
 
   const typeIcons = { 1: '🔐', 2: '📝', 3: '💳', 4: '🪪' };
 
+  // === Group items by first letter (A-Z + #) ===
+  const letterGroups = {};
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (const c of filtered) {
+    const name = (c.decrypted?.name || '').trim();
+    let firstChar = name.charAt(0).toUpperCase();
+    // Only A-Z counts as a letter group; everything else → #
+    if (!firstChar || !LETTERS.includes(firstChar)) {
+      firstChar = '#';
+    }
+    if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
+    letterGroups[firstChar].push(c);
+  }
+
+  // Sort letters: A-Z first, then #
+  const sortedLetters = Object.keys(letterGroups).sort((a, b) => {
+    if (a === '#') return 1;
+    if (b === '#') return -1;
+    return a.localeCompare(b);
+  });
+
+  // === Build HTML ===
+  const hasGroups = sortedLetters.length > 0 && filtered.length > 0;
+
   container.innerHTML = `
     <div class="results-count">${filtered.length} / ${allDecryptedCiphers.length} 条目</div>
     <div class="section-header">
@@ -2182,25 +2206,74 @@ function renderAllItems() {
         <input type="checkbox" id="select-all-cb" class="item-checkbox" /> 全选
       </label>
     </div>
-    ${filtered.map(c => `
-      <div class="vault-item ${selectedItems.has(c.id) ? 'selected' : ''}" data-id="${c.id}">
-        <input type="checkbox" class="item-checkbox item-select-cb" data-id="${c.id}" ${selectedItems.has(c.id) ? 'checked' : ''}/>
-        <div class="item-type-icon">${typeIcons[c.type] || '📄'}</div>
-        <div class="item-info">
-          <div class="item-name">${escHtml(c.decrypted?.name || '(无标题)')}</div>
-          <div class="item-meta">
-            ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
-            ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${escHtml(c.decrypted.uris[0])}</span>` : ''}
-            <span>📁 ${escHtml(folderMap[c.raw?.FolderId] || '—')}</span>
+    <div class="all-items-body" style="position:relative">
+      ${hasGroups ? `
+        <!-- A-Z Quick Index -->
+        <div class="az-index-strip" id="az-index-strip">
+          ${sortedLetters.map(l => `<button class="az-index-letter" data-letter="${l}">${l}</button>`).join('')}
+        </div>
+      ` : ''}
+      <div class="all-items-list">
+        ${sortedLetters.map(letter => `
+          <div class="letter-section" id="letter-section-${letter}">
+            <div class="letter-section-header">${letter}</div>
+            ${letterGroups[letter].map(c => `
+              <div class="vault-item ${selectedItems.has(c.id) ? 'selected' : ''}" data-id="${c.id}">
+                <input type="checkbox" class="item-checkbox item-select-cb" data-id="${c.id}" ${selectedItems.has(c.id) ? 'checked' : ''}/>
+                <div class="item-type-icon">${typeIcons[c.type] || '📄'}</div>
+                <div class="item-info">
+                  <div class="item-name">${escHtml(c.decrypted?.name || '(无标题)')}</div>
+                  <div class="item-meta">
+                    ${c.decrypted?.username ? `<span>👤 ${escHtml(c.decrypted.username)}</span>` : ''}
+                    ${(c.decrypted?.uris?.filter(Boolean) || []).length > 0 ? `<span>🔗 ${escHtml(c.decrypted.uris[0])}</span>` : ''}
+                    <span>📁 ${escHtml(folderMap[c.raw?.FolderId] || '—')}</span>
+                  </div>
+                </div>
+                <div class="item-tags">
+                  ${(c.raw?.Login?.Fido2Credentials?.length || 0) > 0 ? '<span class="mini-tag passkey">🔑</span>' : ''}
+                  ${c.decrypted?.totp ? '<span class="mini-tag totp">🕐</span>' : ''}
+                </div>
+              </div>
+            `).join('')}
           </div>
-        </div>
-        <div class="item-tags">
-          ${(c.raw?.Login?.Fido2Credentials?.length || 0) > 0 ? '<span class="mini-tag passkey">🔑</span>' : ''}
-          ${c.decrypted?.totp ? '<span class="mini-tag totp">🕐</span>' : ''}
-        </div>
+        `).join('') || '<div class="empty-state">没有匹配的条目</div>'}
       </div>
-    `).join('') || '<div class="empty-state">没有匹配的条目</div>'}
+    </div>
   `;
+
+  // === A-Z Index click → scroll to section ===
+  container.querySelectorAll('.az-index-letter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const letter = btn.dataset.letter;
+      const section = document.getElementById(`letter-section-${letter}`);
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // === Scroll spy: highlight active letter ===
+  const mainContent = document.querySelector('.main-content');
+  if (mainContent && hasGroups) {
+    const onScroll = () => {
+      const strip = document.getElementById('az-index-strip');
+      if (!strip) return;
+      const sections = container.querySelectorAll('.letter-section');
+      let activeLetter = sortedLetters[0];
+      for (const sec of sections) {
+        const rect = sec.getBoundingClientRect();
+        if (rect.top <= 120) {
+          activeLetter = sec.id.replace('letter-section-', '');
+        }
+      }
+      strip.querySelectorAll('.az-index-letter').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.letter === activeLetter);
+      });
+    };
+    mainContent.addEventListener('scroll', onScroll, { passive: true });
+    // Also listen on window scroll for non-scrollable-container layouts
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // Initial highlight
+    requestAnimationFrame(onScroll);
+  }
 
   // Event delegation for item clicks
   container.addEventListener('click', (e) => {
