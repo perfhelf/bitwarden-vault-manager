@@ -374,6 +374,10 @@ function enterDemoMode() {
     deleteFolder: async () => {},
     createCipher: async (data) => ({ ...data, Id: 'cipher-' + Date.now() }),
     importCiphers: async () => {},
+    getCipher: async (id) => {
+      const item = allDecryptedCiphers.find(c => c.id === id);
+      return item?.raw || {};
+    },
   };
 
   // Set data directly (plaintext, no decryption needed)
@@ -1086,6 +1090,15 @@ function openDetailDrawer(cipher) {
     <button class="detail-delete-btn" id="detail-delete-btn">${t('detail.btn.delete')}</button>
   </div>`;
 
+  // ── Diagnostic Buttons (only for corrupted items) ──
+  const isCorrupted = d.error || !d.name;
+  if (isCorrupted) {
+    html += `<div class="detail-actions detail-diag-actions" style="margin-top:4px;gap:8px">
+      <button class="detail-diag-btn" id="detail-log-btn">📋 解密日志</button>
+      <button class="detail-diag-btn detail-refetch-btn" id="detail-refetch-btn">🔄 重新获取</button>
+    </div>`;
+  }
+
   body.innerHTML = html;
 
   // Wire up edit button
@@ -1096,6 +1109,163 @@ function openDetailDrawer(cipher) {
 
   // Wire up delete button
   $('#detail-delete-btn')?.addEventListener('click', () => deleteCurrentCipher(cipher));
+
+  // Wire up diagnostic buttons
+  if (isCorrupted) {
+    $('#detail-log-btn')?.addEventListener('click', () => showDecryptLog(cipher));
+    $('#detail-refetch-btn')?.addEventListener('click', () => refetchSingleCipher(cipher));
+  }
+}
+
+/**
+ * Show decrypt log modal for a cipher
+ */
+function showDecryptLog(cipher) {
+  const log = cipher.decrypted?.decryptLog || [];
+  const errors = cipher.decrypted?.decryptErrors || [];
+
+  let html = `<div class="decrypt-log-overlay" id="decrypt-log-overlay">
+    <div class="decrypt-log-modal">
+      <div class="decrypt-log-header">
+        <span>📋 解密日志 · ${escHtml(cipher.decrypted?.name || '(无标题)')}</span>
+        <button class="decrypt-log-close" id="decrypt-log-close">✕</button>
+      </div>
+      <div class="decrypt-log-summary">
+        <span>ID: <code>${cipher.id}</code></span>
+        <span>状态: ${errors.length > 0 ? `<span style="color:#f87171">❌ ${errors.length} 个字段失败</span>` : '<span style="color:#4ade80">✅ 全部成功</span>'}</span>
+        ${errors.length > 0 ? `<span>失败字段: <code>${errors.join(', ')}</code></span>` : ''}
+      </div>
+      <div class="decrypt-log-body">
+        <table class="decrypt-log-table">
+          <thead><tr><th>字段</th><th>状态</th><th>详情</th></tr></thead>
+          <tbody>
+            ${log.map(entry => {
+              const icon = entry.status === 'ok' ? '✅' : entry.status === 'fail' ? '❌' : entry.status === 'skip' ? '⏭️' : 'ℹ️';
+              const cls = entry.status === 'fail' ? 'log-fail' : entry.status === 'ok' ? 'log-ok' : 'log-skip';
+              return `<tr class="${cls}"><td>${escHtml(entry.field)}</td><td>${icon}</td><td>${escHtml(entry.detail)}</td></tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        ${log.length === 0 ? '<div style="padding:16px;text-align:center;color:var(--text-secondary)">无日志数据 (演示模式不产生解密日志)</div>' : ''}
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  const overlay = $('#decrypt-log-overlay');
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  $('#decrypt-log-close')?.addEventListener('click', () => overlay.remove());
+}
+
+/**
+ * Re-fetch a single cipher from the API and re-decrypt it
+ */
+async function refetchSingleCipher(cipher) {
+  if (isDemoMode) {
+    showToast('演示模式下不支持重新获取', 'warning');
+    return;
+  }
+
+  const btn = $('#detail-refetch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 获取中...'; }
+
+  try {
+    // Fetch fresh cipher data from API
+    const freshRaw = await client.getCipher(cipher.id);
+
+    // Re-decrypt with logging
+    const logEntries = [];
+    const decryptErrors = [];
+    logEntries.push({ field: '⏱ 重新获取时间', status: 'info', detail: new Date().toLocaleString('zh-CN') });
+    logEntries.push({ field: '📡 API 请求', status: 'ok', detail: `成功获取 cipher ${cipher.id.substring(0, 8)}...` });
+
+    // Check if raw data actually has encrypted fields
+    if (!freshRaw.Name) {
+      logEntries.push({ field: '⚠️ 原始数据检查', status: 'fail', detail: '云端数据中 Name 字段为空 — 数据可能本身已损坏' });
+    } else {
+      logEntries.push({ field: '⚠️ 原始数据检查', status: 'ok', detail: `Name 字段存在 (${freshRaw.Name.substring(0, 40)}...)` });
+    }
+
+    const rawName = await decryptFieldWithRetry(freshRaw.Name, symmetricKey, 5, logEntries, '名称 (Name)');
+    const rawNotes = await decryptFieldWithRetry(freshRaw.Notes, symmetricKey, 5, logEntries, '备注 (Notes)');
+    if (fieldFailed(rawName)) decryptErrors.push('name');
+    if (fieldFailed(rawNotes)) decryptErrors.push('notes');
+
+    // Update cipher in place
+    cipher.raw = freshRaw;
+    cipher.decrypted.name = fieldValue(rawName);
+    cipher.decrypted.notes = fieldValue(rawNotes);
+
+    // Login type
+    if (freshRaw.Type === 1 && freshRaw.Login) {
+      const rawUsername = await decryptFieldWithRetry(freshRaw.Login.Username, symmetricKey, 5, logEntries, '用户名 (Username)');
+      const rawPassword = await decryptFieldWithRetry(freshRaw.Login.Password, symmetricKey, 5, logEntries, '密码 (Password)');
+      const rawTotp = await decryptFieldWithRetry(freshRaw.Login.Totp, symmetricKey, 5, logEntries, 'TOTP');
+      if (fieldFailed(rawUsername)) decryptErrors.push('username');
+      if (fieldFailed(rawPassword)) decryptErrors.push('password');
+      if (fieldFailed(rawTotp)) decryptErrors.push('totp');
+      cipher.decrypted.username = fieldValue(rawUsername);
+      cipher.decrypted.password = fieldValue(rawPassword);
+      cipher.decrypted.totp = fieldValue(rawTotp);
+
+      if (freshRaw.Login.Uris) {
+        cipher.decrypted.uris = [];
+        for (let i = 0; i < freshRaw.Login.Uris.length; i++) {
+          const rawUri = await decryptFieldWithRetry(freshRaw.Login.Uris[i].Uri, symmetricKey, 5, logEntries, `URI ${i + 1}`);
+          if (fieldFailed(rawUri)) decryptErrors.push('uri');
+          cipher.decrypted.uris.push(fieldValue(rawUri));
+        }
+      }
+    }
+
+    // Custom fields
+    if (freshRaw.Fields && freshRaw.Fields.length > 0) {
+      cipher.decrypted.fields = [];
+      for (let i = 0; i < freshRaw.Fields.length; i++) {
+        const f = freshRaw.Fields[i];
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].值`);
+        if (fieldFailed(rawFName)) decryptErrors.push('field.name');
+        if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
+        const fieldType = f.Type ?? f.type ?? 0;
+        cipher.decrypted.fields.push({ name: fieldValue(rawFName), value: fieldValue(rawFValue), type: fieldType });
+      }
+    }
+
+    // Update log and error state
+    cipher.decrypted.decryptLog = logEntries;
+    if (decryptErrors.length > 0) {
+      cipher.decrypted.decryptErrors = decryptErrors;
+      cipher.decrypted.error = `Fields failed: ${decryptErrors.join(', ')}`;
+    } else {
+      delete cipher.decrypted.decryptErrors;
+      delete cipher.decrypted.error;
+    }
+
+    // Re-analyze and refresh UI
+    analysisResult = analyzeCiphers(allDecryptedCiphers);
+    healthResult = analyzeHealth(allDecryptedCiphers);
+    updateSidebarBadges();
+
+    // Re-open the detail drawer with updated data
+    openDetailDrawer(cipher);
+
+    if (decryptErrors.length > 0) {
+      showToast(`重新获取完成，仍有 ${decryptErrors.length} 个字段解密失败`, 'warning');
+    } else {
+      showToast('🎉 重新获取并解密成功！条目已恢复', 'success');
+      // Refresh corrupted view
+      if (currentView === 'corrupted') renderCorruptedView();
+    }
+  } catch (err) {
+    console.error('[Refetch] Failed:', err);
+    showToast(`获取失败: ${err.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 重新获取'; }
+  }
 }
 
 function closeDetailDrawer() {
@@ -1595,22 +1765,28 @@ function escapeHtml(str) {
 /**
  * Try to decrypt a single field with up to maxRetries attempts
  */
-async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5) {
-  if (!cipherString) return null;
+async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5, logEntries = null, fieldLabel = '') {
+  if (!cipherString) {
+    if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'skip', detail: '字段为空' });
+    return null;
+  }
   let lastErr = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await decryptToString(cipherString, keys);
+      const result = await decryptToString(cipherString, keys);
+      if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'ok', detail: `解密成功 (尝试 ${attempt + 1}/${maxRetries})` });
+      return result;
     } catch (err) {
       lastErr = err;
-      // Small delay before retry (exponential backoff)
       if (attempt < maxRetries - 1) {
         await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
       }
     }
   }
-  console.warn(`Field decrypt failed after ${maxRetries} retries:`, lastErr?.message);
-  return { __decryptFailed: true, error: lastErr?.message || 'Unknown error' };
+  const errMsg = lastErr?.message || 'Unknown error';
+  console.warn(`Field decrypt failed after ${maxRetries} retries:`, errMsg);
+  if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'fail', detail: `${maxRetries}次重试后失败: ${errMsg}` });
+  return { __decryptFailed: true, error: errMsg };
 }
 
 /** Extract usable value from decryptFieldWithRetry result; null if failed */
@@ -1624,17 +1800,24 @@ function fieldFailed(result) {
   return result && typeof result === 'object' && result.__decryptFailed === true;
 }
 
+/** Get error message from a failure marker */
+function fieldError(result) {
+  return (result && typeof result === 'object' && result.__decryptFailed) ? result.error : null;
+}
+
 async function decryptAllCiphers(syncData) {
   const ciphers = syncData.Ciphers || [];
   const decrypted = [];
   let failCount = 0;
 
   for (const cipher of ciphers) {
-    const decryptErrors = []; // Track which fields failed
+    const decryptErrors = [];
+    const logEntries = []; // Detailed per-field log
+    logEntries.push({ field: '⏱ 时间', status: 'info', detail: new Date().toLocaleString('zh-CN') });
 
     // Decrypt each field independently — partial success is OK
-    const rawName = await decryptFieldWithRetry(cipher.Name, symmetricKey);
-    const rawNotes = await decryptFieldWithRetry(cipher.Notes, symmetricKey);
+    const rawName = await decryptFieldWithRetry(cipher.Name, symmetricKey, 5, logEntries, '名称 (Name)');
+    const rawNotes = await decryptFieldWithRetry(cipher.Notes, symmetricKey, 5, logEntries, '备注 (Notes)');
 
     if (fieldFailed(rawName)) decryptErrors.push('name');
     if (fieldFailed(rawNotes)) decryptErrors.push('notes');
@@ -1655,9 +1838,9 @@ async function decryptAllCiphers(syncData) {
 
     // Login type
     if (cipher.Type === 1 && cipher.Login) {
-      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, symmetricKey);
-      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, symmetricKey);
-      const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, symmetricKey);
+      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, symmetricKey, 5, logEntries, '用户名 (Username)');
+      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, symmetricKey, 5, logEntries, '密码 (Password)');
+      const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, symmetricKey, 5, logEntries, 'TOTP');
 
       if (fieldFailed(rawUsername)) decryptErrors.push('username');
       if (fieldFailed(rawPassword)) decryptErrors.push('password');
@@ -1670,8 +1853,8 @@ async function decryptAllCiphers(syncData) {
 
       if (cipher.Login.Uris) {
         item.decrypted.uris = [];
-        for (const u of cipher.Login.Uris) {
-          const rawUri = await decryptFieldWithRetry(u.Uri, symmetricKey);
+        for (let i = 0; i < cipher.Login.Uris.length; i++) {
+          const rawUri = await decryptFieldWithRetry(cipher.Login.Uris[i].Uri, symmetricKey, 5, logEntries, `URI ${i + 1}`);
           if (fieldFailed(rawUri)) decryptErrors.push('uri');
           item.decrypted.uris.push(fieldValue(rawUri));
         }
@@ -1681,20 +1864,19 @@ async function decryptAllCiphers(syncData) {
     // Card type
     if (cipher.Type === 3 && cipher.Card) {
       const card = cipher.Card;
-      const rawCard = {
-        cardholderName: await decryptFieldWithRetry(card.CardholderName || card.cardholderName, symmetricKey),
-        number: await decryptFieldWithRetry(card.Number || card.number, symmetricKey),
-        expMonth: await decryptFieldWithRetry(card.ExpMonth || card.expMonth, symmetricKey),
-        expYear: await decryptFieldWithRetry(card.ExpYear || card.expYear, symmetricKey),
-        code: await decryptFieldWithRetry(card.Code || card.code, symmetricKey),
-        brand: await decryptFieldWithRetry(card.Brand || card.brand, symmetricKey),
+      const cardFieldMap = {
+        cardholderName: ['持卡人', card.CardholderName || card.cardholderName],
+        number: ['卡号', card.Number || card.number],
+        expMonth: ['过期月', card.ExpMonth || card.expMonth],
+        expYear: ['过期年', card.ExpYear || card.expYear],
+        code: ['安全码', card.Code || card.code],
+        brand: ['品牌', card.Brand || card.brand],
       };
-      for (const [k, v] of Object.entries(rawCard)) {
-        if (fieldFailed(v)) decryptErrors.push(`card.${k}`);
-      }
       item.decrypted.card = {};
-      for (const [k, v] of Object.entries(rawCard)) {
-        item.decrypted.card[k] = fieldValue(v);
+      for (const [k, [label, val]] of Object.entries(cardFieldMap)) {
+        const rawVal = await decryptFieldWithRetry(val, symmetricKey, 5, logEntries, `卡片.${label}`);
+        if (fieldFailed(rawVal)) decryptErrors.push(`card.${k}`);
+        item.decrypted.card[k] = fieldValue(rawVal);
       }
     }
 
@@ -1710,7 +1892,7 @@ async function decryptAllCiphers(syncData) {
       ];
       for (const field of identityFields) {
         const key = field.charAt(0).toLowerCase() + field.slice(1);
-        const rawVal = await decryptFieldWithRetry(id[field] || id[key], symmetricKey);
+        const rawVal = await decryptFieldWithRetry(id[field] || id[key], symmetricKey, 5, logEntries, `身份.${field}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`identity.${key}`);
         item.decrypted.identity[key] = fieldValue(rawVal);
       }
@@ -1719,15 +1901,19 @@ async function decryptAllCiphers(syncData) {
     // Custom fields
     if (cipher.Fields && cipher.Fields.length > 0) {
       item.decrypted.fields = [];
-      for (const f of cipher.Fields) {
-        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey);
-        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey);
+      for (let i = 0; i < cipher.Fields.length; i++) {
+        const f = cipher.Fields[i];
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].值`);
         if (fieldFailed(rawFName)) decryptErrors.push('field.name');
         if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
-        const fieldType = f.Type ?? f.type ?? 0; // 0=text, 1=hidden, 2=boolean, 3=linked
+        const fieldType = f.Type ?? f.type ?? 0;
         item.decrypted.fields.push({ name: fieldValue(rawFName), value: fieldValue(rawFValue), type: fieldType });
       }
     }
+
+    // Store full log
+    item.decrypted.decryptLog = logEntries;
 
     // Mark items with ANY decrypt failures
     if (decryptErrors.length > 0) {

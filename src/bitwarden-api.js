@@ -210,6 +210,15 @@ export class BitwardenClient {
   }
 
   /**
+   * Get a single cipher by ID
+   */
+  async getCipher(id) {
+    const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`);
+    if (!res.ok) throw new Error(`Get cipher failed: ${res.status}`);
+    return res.json();
+  }
+
+  /**
    * Update a cipher (for merging passkeys)
    */
   async updateCipher(id, cipherData) {

@@ -2533,3 +2533,129 @@ body {
 .merge-report-body .fail-detail { flex: 1; }
 .merge-report-body .fail-label { font-weight: 600; color: var(--text-primary); }
 .merge-report-body .fail-reason { color: var(--text-secondary); font-size: 0.82rem; }
+
+/* ── Diagnostic Buttons ── */
+.detail-diag-actions {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
+}
+.detail-diag-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.detail-diag-btn:hover {
+  border-color: var(--brand);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.detail-refetch-btn:hover {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+/* ── Decrypt Log Modal ── */
+.decrypt-log-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.decrypt-log-modal {
+  background: var(--bg-card);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.decrypt-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.decrypt-log-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.decrypt-log-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.decrypt-log-summary {
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-main);
+}
+.decrypt-log-summary code {
+  background: var(--bg-hover);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+.decrypt-log-body {
+  overflow-y: auto;
+  flex: 1;
+}
+.decrypt-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.decrypt-log-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border);
+}
+.decrypt-log-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.decrypt-log-table tr.log-fail td {
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
+.decrypt-log-table tr.log-ok td {
+  color: var(--text-primary);
+}
+.decrypt-log-table tr.log-skip td {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
