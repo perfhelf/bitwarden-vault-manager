@@ -498,9 +498,9 @@ body {
   transition: all 0.15s;
 }
 .folder-add-btn:hover {
-  background: var(--accent);
+  background: var(--brand);
   color: white;
-  border-color: var(--accent);
+  border-color: var(--brand);
 }
 
 .folder-list {
@@ -530,7 +530,7 @@ body {
 }
 .folder-item.active {
   background: rgba(99,102,241,0.15);
-  color: var(--accent);
+  color: var(--brand);
   font-weight: 600;
 }
 
@@ -601,7 +601,7 @@ body {
 }
 .folder-name-input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
 }
 
@@ -633,18 +633,18 @@ body {
 }
 .move-folder-option:hover {
   background: rgba(99,102,241,0.08);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 /* --- Batch Move Button --- */
 .batch-btn.move {
   background: rgba(99,102,241,0.15);
-  color: var(--accent);
+  color: var(--brand);
   border: 1px solid rgba(99,102,241,0.3);
 }
 .batch-btn.move:hover {
-  background: var(--accent);
+  background: var(--brand);
   color: white;
 }
 
@@ -656,7 +656,7 @@ body {
 }
 .orphan-item.selectable .item-cb {
   margin-top: 4px;
-  accent-color: var(--accent);
+  accent-color: var(--brand);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -669,7 +669,7 @@ body {
   font-weight: 500;
 }
 .select-all-label input {
-  accent-color: var(--accent);
+  accent-color: var(--brand);
   cursor: pointer;
 }
 
@@ -688,7 +688,7 @@ body {
   background: rgba(255,255,255,0.02);
 }
 .cred-drop-zone:hover, .cred-drop-zone.drag-active {
-  border-color: var(--accent);
+  border-color: var(--brand);
   background: rgba(23,93,220,0.08);
   transform: scale(1.01);
 }
