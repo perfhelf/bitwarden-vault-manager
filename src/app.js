@@ -2888,64 +2888,54 @@ async function checkDeadUrls() {
    * Returns true if domain is alive.
    */
   async function isDomainAlive(domain) {
-    const TIMEOUT = 8000;
+    const TIMEOUT = 6000;
 
     // Strategy 1: fetch with no-cors
-    try {
+    const fetchProbe = (async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT);
-      await fetch(`https://${domain}/favicon.ico`, {
-        method: 'GET',
-        mode: 'no-cors',
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      return true; // opaque response = alive
-    } catch {
-      // fetch failed — try fallback
-    }
+      try {
+        await fetch(`https://${domain}/favicon.ico`, {
+          method: 'GET',
+          mode: 'no-cors',
+          signal: controller.signal,
+        });
+        return true;
+      } catch {
+        throw new Error('fetch failed');
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
 
     // Strategy 2: <img> favicon probe
-    // Some anti-bot systems (Cloudflare Under Attack Mode) block fetch
-    // but the browser can still load images from the domain.
-    try {
-      const alive = await new Promise((resolve) => {
-        const img = new Image();
-        const timer = setTimeout(() => { img.src = ''; resolve(false); }, TIMEOUT);
-        img.onload = () => { clearTimeout(timer); resolve(true); };
-        img.onerror = () => { clearTimeout(timer); resolve(false); };
-        img.src = `https://${domain}/favicon.ico?_t=${Date.now()}`;
-      });
-      if (alive) return true;
-    } catch {
-      // img also failed
-    }
+    const imgProbe = new Promise((resolve, reject) => {
+      const img = new Image();
+      const timer = setTimeout(() => { img.src = ''; reject(new Error('img timeout')); }, TIMEOUT);
+      img.onload = () => { clearTimeout(timer); resolve(true); };
+      img.onerror = () => { clearTimeout(timer); reject(new Error('img error')); };
+      img.src = `https://${domain}/favicon.ico?_t=${Date.now()}`;
+    });
 
-    // Strategy 3: <link> stylesheet probe — last resort
-    // Some sites block even image requests but serve CSS/other resources.
-    try {
-      const alive = await new Promise((resolve) => {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.type = 'text/css';
-        const timer = setTimeout(() => { link.remove(); resolve(false); }, TIMEOUT);
-        link.onload = () => { clearTimeout(timer); link.remove(); resolve(true); };
-        link.onerror = () => {
-          clearTimeout(timer); link.remove();
-          // onerror fires for CORS-blocked CSS too — but the DNS resolved,
-          // so the domain IS alive. We check if we got a real network error.
-          // In practice, onerror for a live domain means CORS block = domain alive.
-          resolve(true);
-        };
-        link.href = `https://${domain}/favicon.ico?_t=${Date.now()}`;
-        document.head.appendChild(link);
-      });
-      if (alive) return true;
-    } catch {
-      // all strategies failed
-    }
+    // Strategy 3: <link> probe (onerror on live domain = CORS block = alive)
+    const linkProbe = new Promise((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      const timer = setTimeout(() => { link.remove(); reject(new Error('link timeout')); }, TIMEOUT);
+      link.onload = () => { clearTimeout(timer); link.remove(); resolve(true); };
+      link.onerror = () => { clearTimeout(timer); link.remove(); resolve(true); }; // onerror = DNS resolved = alive
+      link.href = `https://${domain}/favicon.ico?_t=${Date.now()}`;
+      document.head.appendChild(link);
+    });
 
-    return false; // truly dead
+    // Race: any strategy succeeding = domain is alive
+    try {
+      await Promise.any([fetchProbe, imgProbe, linkProbe]);
+      return true;
+    } catch {
+      return false; // all strategies failed
+    }
   }
 
   // Check each unique domain with concurrency limit
