@@ -1201,11 +1201,42 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 16px;
+}
+
+.section-header .btn-primary {
+  width: auto;
+  padding: 7px 20px;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .section-title {
   font-size: 1.15rem;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-right: 6px;
+}
+
+.select-all-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+  cursor: pointer;
 }
 
 .dup-group {

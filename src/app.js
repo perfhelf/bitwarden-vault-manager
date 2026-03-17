@@ -3517,8 +3517,8 @@ function renderTypeFilteredView(viewName, typeId, title) {
         const user = dec?.username || '';
         const uri = dec?.uris?.filter(Boolean)?.[0] || '';
         const parts = [];
-        if (user) parts.push(`👤 ${user}`);
-        if (uri) parts.push(`🔗 ${uri.length > 40 ? uri.substring(0, 40) + '…' : uri}`);
+        if (user) parts.push(`👤 ${escHtml(user)}`);
+        if (uri) parts.push(`🔗 ${linkUri(uri)}`);
         return parts.join('  ') || '—';
       }
       case 3: { // Card
@@ -3543,7 +3543,7 @@ function renderTypeFilteredView(viewName, typeId, title) {
   };
 
   container.innerHTML = `
-    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+    <div class="section-header">
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="${viewName}-select-all-cb" ${allSelected ? 'checked' : ''} />
@@ -3551,13 +3551,18 @@ function renderTypeFilteredView(viewName, typeId, title) {
         </label>
         ${title} · ${filtered.length} 项
       </span>
-      <button class="btn-primary create-item-btn" data-type="${typeId}" style="padding:6px 18px;font-size:0.82rem;border-radius:var(--radius-sm)">＋ 新建</button>
+      <button class="btn-primary create-item-btn" data-type="${typeId}">＋ 新建</button>
     </div>
     ${filtered.map(item => {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
       const name = escHtml(item.decrypted?.name || '(无标题)');
       const subtitle = getSubtitle(item);
       const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
+      // Tags (Login only: passkey + TOTP)
+      const hasPasskey = typeId === 1 && (item.raw?.Login?.Fido2Credentials?.length || 0) > 0;
+      const hasTotp = typeId === 1 && item.decrypted?.totp;
+      const tags = (hasPasskey ? '<span class="mini-tag passkey">🔑</span>' : '') +
+                   (hasTotp ? '<span class="mini-tag totp">🕐</span>' : '');
       return `
       <div class="orphan-item selectable" data-id="${item.id}">
         <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
@@ -3568,6 +3573,7 @@ function renderTypeFilteredView(viewName, typeId, title) {
             <span>📁 ${folder}</span>
           </div>
         </div>
+        ${tags ? `<div class="item-tags">${tags}</div>` : ''}
       </div>`;
     }).join('')}
   `;
@@ -3633,7 +3639,7 @@ function renderFavoritesView() {
   const typeIcon = (type) => ({ 1: '🔐', 2: '📝', 3: '💳', 4: '🪪', 5: '🔑' }[type] || '📄');
 
   container.innerHTML = `
-    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+    <div class="section-header">
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="favorites-select-all-cb" ${allSelected ? 'checked' : ''} />
