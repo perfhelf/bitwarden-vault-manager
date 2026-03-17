@@ -451,8 +451,7 @@ function switchView(view) {
 
   // Show/hide filter bar (only for 'all' and 'folder' views)
   const filterBar = $('#filter-bar');
-  const showFilter = (view === 'all' || view === 'folder' || view.startsWith('type-'));
-  filterBar.style.display = showFilter ? 'flex' : 'none';
+  filterBar.style.display = (view === 'all' || view === 'folder') ? 'flex' : 'none';
 
   // Clear selection on view change
   selectedItems.clear();
