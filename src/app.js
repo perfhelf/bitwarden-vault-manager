@@ -532,6 +532,34 @@ function setupSearch() {
 }
 
 /**
+ * Get the first letter (A-Z) for grouping. Supports Chinese pinyin initials.
+ * Uses Intl.Collator with pinyin collation for zero-dependency CJK support.
+ */
+let _pinyinCollator;
+try { _pinyinCollator = new Intl.Collator('zh-CN-u-co-pinyin'); } catch(e) { _pinyinCollator = null; }
+
+function getFirstLetter(name) {
+  if (!name) return '#';
+  const ch = name.trim().charAt(0);
+  if (!ch) return '#';
+  const upper = ch.toUpperCase();
+  if (upper >= 'A' && upper <= 'Z') return upper;
+  // CJK Unified Ideographs range
+  if (_pinyinCollator && ch >= '\u4e00' && ch <= '\u9fff') {
+    // Boundary characters: first common char for each pinyin initial group
+    // Iterate from Z→A, return first match where ch >= boundary
+    const letters = 'ZYXWTSRQPONMLKJHGFEDCBA';
+    const bounds  = '匝压夕挖他撒然七啪哦拿妈垃咖击哈嘎发鹅搭擦八阿';
+    for (let i = 0; i < bounds.length; i++) {
+      if (_pinyinCollator.compare(ch, bounds[i]) >= 0) {
+        return letters[i];
+      }
+    }
+  }
+  return '#';
+}
+
+/**
  * Check if a cipher matches the current search query
  */
 function matchesSearch(item) {
@@ -3690,13 +3718,10 @@ function renderTypeFilteredView(viewName, typeId, title) {
     }
   };
 
-  // === Group items by first letter (A-Z + #) ===
+  // === Group items by first letter (A-Z + #, supports Chinese pinyin) ===
   const letterGroups = {};
-  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   for (const c of filtered) {
-    const name = (c.decrypted?.name || '').trim();
-    let firstChar = name.charAt(0).toUpperCase();
-    if (!firstChar || !LETTERS.includes(firstChar)) firstChar = '#';
+    const firstChar = getFirstLetter(c.decrypted?.name || '');
     if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
     letterGroups[firstChar].push(c);
   }
@@ -3941,13 +3966,10 @@ function renderNoFolderView() {
 
   const allSelected = filteredItems.length > 0 && filteredItems.every(c => selectedItems.has(c.id));
 
-  // === Group items by first letter (A-Z + #) ===
+  // === Group items by first letter (A-Z + #, supports Chinese pinyin) ===
   const letterGroups = {};
-  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   for (const c of filteredItems) {
-    const name = (c.decrypted?.name || '').trim();
-    let firstChar = name.charAt(0).toUpperCase();
-    if (!firstChar || !LETTERS.includes(firstChar)) firstChar = '#';
+    const firstChar = getFirstLetter(c.decrypted?.name || '');
     if (!letterGroups[firstChar]) letterGroups[firstChar] = [];
     letterGroups[firstChar].push(c);
   }
