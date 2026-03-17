@@ -696,7 +696,7 @@ body {
 .drop-text { color: var(--text-secondary); font-size: 0.95rem; }
 .drop-or { color: var(--text-muted); font-size: 0.85rem; margin: 10px 0; }
 .drop-browse-btn {
-  background: var(--accent);
+  background: var(--brand);
   color: white;
   border: none;
   padding: 8px 20px;
@@ -704,6 +704,7 @@ body {
   font-size: 0.9rem;
   cursor: pointer;
   transition: opacity 0.2s;
+  align-self: center;
 }
 .drop-browse-btn:hover { opacity: 0.85; }
 
