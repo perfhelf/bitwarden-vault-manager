@@ -1655,13 +1655,26 @@ async function saveEditedCipher(cipher) {
       updated.Fields = updated.fields = null;
     }
 
-    await client.updateCipher(cipher.id, updated);
-
+    // ── Phase 1: 乐观热更新 ── 立即从 dead URL 列表移除并关闭编辑器 ──
+    const editedId = cipher.id;
+    deadUrlItems = deadUrlItems.filter(c => c.id !== editedId);
     showToast('✅ 条目已保存', 'success');
     closeDetailDrawer();
+    updateSidebarBadges();
+    if (currentView === 'dead-urls') renderDeadUrlsView();
 
-    // Re-sync to get updated data
-    await resyncVault();
+    // ── Phase 2: 后台服务端保存 ──
+    try {
+      await client.updateCipher(cipher.id, updated);
+    } catch (err) {
+      console.error('[Save] Server updateCipher failed:', err);
+      showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
+      await resyncVault();
+      return;
+    }
+
+    // ── Phase 3: 后台静默 resync 保持一致性 ──
+    resyncVault();
   } catch (err) {
     console.error('Save error:', err);
     showToast(`❌ 保存失败: ${err.message}`, 'error');
