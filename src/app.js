@@ -2009,9 +2009,22 @@ async function saveEditedCipher(cipher) {
     // Start from the original API response
     const updated = JSON.parse(JSON.stringify(cipher.raw._original));
 
+    // Determine the correct encryption key
+    // Items with a per-cipher Key (Passkey items) must be encrypted with their own key
+    let encKey = symmetricKey;
+    const cipherKeyStr = cipher.raw?.Key || cipher.raw?.key || cipher.raw?._original?.Key || cipher.raw?._original?.key;
+    if (cipherKeyStr) {
+      try {
+        encKey = await decryptSymmetricKey(cipherKeyStr, symmetricKey);
+        console.log('[Save] Using per-cipher key for encryption');
+      } catch (err) {
+        console.warn('[Save] Failed to decrypt per-cipher Key, falling back to master key:', err.message);
+      }
+    }
+
     // Re-encrypt changed fields
-    updated.Name = updated.name = await encryptString(name, symmetricKey);
-    updated.Notes = updated.notes = notes ? await encryptString(notes, symmetricKey) : null;
+    updated.Name = updated.name = await encryptString(name, encKey);
+    updated.Notes = updated.notes = notes ? await encryptString(notes, encKey) : null;
     updated.FolderId = updated.folderId = folderId;
     updated.Reprompt = updated.reprompt = reprompt;
     updated.Favorite = updated.favorite = $('#edit-favorite')?.checked || false;
@@ -2022,9 +2035,9 @@ async function saveEditedCipher(cipher) {
       const password = $('#edit-password')?.value || '';
       const totp = $('#edit-totp')?.value || '';
 
-      login.Username = login.username = await encryptString(username, symmetricKey);
-      login.Password = login.password = await encryptString(password, symmetricKey);
-      login.Totp = login.totp = totp ? await encryptString(totp, symmetricKey) : null;
+      login.Username = login.username = await encryptString(username, encKey);
+      login.Password = login.password = await encryptString(password, encKey);
+      login.Totp = login.totp = totp ? await encryptString(totp, encKey) : null;
 
       // URIs
       const uriInputs = [...document.querySelectorAll('.edit-uri')];
@@ -2033,8 +2046,8 @@ async function saveEditedCipher(cipher) {
         const val = input.value.trim();
         if (val) {
           uris.push({
-            Uri: await encryptString(val, symmetricKey),
-            uri: await encryptString(val, symmetricKey),
+            Uri: await encryptString(val, encKey),
+            uri: await encryptString(val, encKey),
             Match: null,
             match: null,
           });
@@ -2052,7 +2065,7 @@ async function saveEditedCipher(cipher) {
       for (const f of cardFields) {
         const val = $(`#edit-card-${f}`)?.value || '';
         const key = f.charAt(0).toUpperCase() + f.slice(1);
-        card[key] = card[f] = val ? await encryptString(val, symmetricKey) : null;
+        card[key] = card[f] = val ? await encryptString(val, encKey) : null;
       }
       updated.Card = updated.card = card;
     }
@@ -2064,7 +2077,7 @@ async function saveEditedCipher(cipher) {
       for (const f of idFields) {
         const val = $(`#edit-id-${f}`)?.value || '';
         const key = f.charAt(0).toUpperCase() + f.slice(1);
-        identity[key] = identity[f] = val ? await encryptString(val, symmetricKey) : null;
+        identity[key] = identity[f] = val ? await encryptString(val, encKey) : null;
       }
       updated.Identity = updated.identity = identity;
     }
@@ -2080,7 +2093,7 @@ async function saveEditedCipher(cipher) {
       const sshFields = { publicKey: 'PublicKey', privateKey: 'PrivateKey', keyFingerprint: 'KeyFingerprint' };
       for (const [lower, upper] of Object.entries(sshFields)) {
         const val = $(`#edit-ssh-${lower}`)?.value || '';
-        ssh[upper] = ssh[lower] = val ? await encryptString(val, symmetricKey) : null;
+        ssh[upper] = ssh[lower] = val ? await encryptString(val, encKey) : null;
       }
       updated.SshKey = updated.sshKey = ssh;
     }
@@ -2103,10 +2116,10 @@ async function saveEditedCipher(cipher) {
           fv = valueInput?.value || '';
         }
         encFields.push({
-          Name: await encryptString(fn, symmetricKey),
-          name: await encryptString(fn, symmetricKey),
-          Value: await encryptString(fv, symmetricKey),
-          value: await encryptString(fv, symmetricKey),
+          Name: await encryptString(fn, encKey),
+          name: await encryptString(fn, encKey),
+          Value: await encryptString(fv, encKey),
+          value: await encryptString(fv, encKey),
           Type: fieldType,
           type: fieldType,
         });
