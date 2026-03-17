@@ -299,29 +299,49 @@ export class BitwardenClient {
     delete payload.fields;
     delete payload.key;
 
-    // Login-type fields (apply our merged Login data)
+    // Login-type fields: MERGE into fresh GET Login, don't replace entirely
     const srcLogin = src.Login || src.login;
     if (srcLogin) {
-      payload.Login = {
-        Username: srcLogin.Username ?? srcLogin.username ?? null,
-        Password: srcLogin.Password ?? srcLogin.password ?? null,
-        PasswordRevisionDate: srcLogin.PasswordRevisionDate || srcLogin.passwordRevisionDate || null,
-        Totp: srcLogin.Totp ?? srcLogin.totp ?? null,
-        Uris: (srcLogin.Uris || srcLogin.uris || []).map(u => ({
+      const freshLogin = (current && (current.Login || current.login)) || {};
+      // Start from the full fresh GET Login (preserves all API fields)
+      payload.Login = { ...freshLogin };
+      // Override only the fields we manage
+      if ('Username' in srcLogin || 'username' in srcLogin)
+        payload.Login.Username = srcLogin.Username ?? srcLogin.username ?? payload.Login.Username ?? null;
+      if ('Password' in srcLogin || 'password' in srcLogin)
+        payload.Login.Password = srcLogin.Password ?? srcLogin.password ?? payload.Login.Password ?? null;
+      if ('PasswordRevisionDate' in srcLogin || 'passwordRevisionDate' in srcLogin)
+        payload.Login.PasswordRevisionDate = srcLogin.PasswordRevisionDate || srcLogin.passwordRevisionDate || payload.Login.PasswordRevisionDate || null;
+      if ('Totp' in srcLogin || 'totp' in srcLogin)
+        payload.Login.Totp = srcLogin.Totp ?? srcLogin.totp ?? payload.Login.Totp ?? null;
+      if (srcLogin.Uris || srcLogin.uris)
+        payload.Login.Uris = (srcLogin.Uris || srcLogin.uris || []).map(u => ({
           Uri: u.Uri || u.uri || null,
           Match: u.Match ?? u.match ?? null,
           UriChecksum: u.UriChecksum || u.uriChecksum || null,
-        })),
-        Fido2Credentials: srcLogin.Fido2Credentials || srcLogin.fido2Credentials || [],
-      };
+        }));
+      if (srcLogin.Fido2Credentials || srcLogin.fido2Credentials)
+        payload.Login.Fido2Credentials = srcLogin.Fido2Credentials || srcLogin.fido2Credentials || payload.Login.Fido2Credentials || [];
       delete payload.login;
     }
 
-    // Card/Identity/SecureNote/SshKey (pass-through)
-    if (src.Card || src.card) { payload.Card = src.Card || src.card; delete payload.card; }
-    if (src.Identity || src.identity) { payload.Identity = src.Identity || src.identity; delete payload.identity; }
+    // Card/Identity/SecureNote/SshKey: merge into fresh GET data
+    if (src.Card || src.card) {
+      const freshCard = (current && (current.Card || current.card)) || {};
+      payload.Card = { ...freshCard, ...(src.Card || src.card) };
+      delete payload.card;
+    }
+    if (src.Identity || src.identity) {
+      const freshId = (current && (current.Identity || current.identity)) || {};
+      payload.Identity = { ...freshId, ...(src.Identity || src.identity) };
+      delete payload.identity;
+    }
     if (src.SecureNote || src.secureNote) { payload.SecureNote = src.SecureNote || src.secureNote; delete payload.secureNote; }
-    if (src.SshKey || src.sshKey) { payload.SshKey = src.SshKey || src.sshKey; delete payload.sshKey; }
+    if (src.SshKey || src.sshKey) {
+      const freshSsh = (current && (current.SshKey || current.sshKey)) || {};
+      payload.SshKey = { ...freshSsh, ...(src.SshKey || src.sshKey) };
+      delete payload.sshKey;
+    }
 
     console.log(`[updateCipher] PUT /ciphers/${id} Key=${!!payload.Key}`, JSON.stringify(payload).substring(0, 1500));
 
