@@ -2144,13 +2144,127 @@ async function saveEditedCipher(cipher) {
     if (currentView === 'dead-urls') renderDeadUrlsView();
 
     // ── Phase 2: 后台服务端保存 ──
-    try {
-      await client.updateCipher(cipher.id, updated);
-    } catch (err) {
-      console.error('[Save] Server updateCipher failed:', err);
-      showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
-      await resyncVault();
-      return;
+    const hasCipherKey = !!(cipher.raw?.Key || cipher.raw?.key || cipher.raw?._original?.Key || cipher.raw?._original?.key);
+
+    if (hasCipherKey) {
+      // ── Passkey item: create-then-delete strategy ──
+      // PUT update fails for per-cipher-key items, so we create a new cipher and delete the old one
+      console.log('[Save] Passkey item detected — using create-then-delete strategy');
+      try {
+        // Build a clean camelCase create payload
+        const createPayload = {
+          type: cipher.type,
+          organizationId: updated.OrganizationId || updated.organizationId || null,
+          folderId: updated.FolderId || updated.folderId || null,
+          name: updated.Name || updated.name,
+          notes: updated.Notes || updated.notes || null,
+          favorite: updated.Favorite ?? updated.favorite ?? false,
+          reprompt: updated.Reprompt ?? updated.reprompt ?? 0,
+          key: cipher.raw?.Key || cipher.raw?.key || cipher.raw?._original?.Key || cipher.raw?._original?.key,
+        };
+
+        // Login
+        const srcLogin = updated.Login || updated.login;
+        if (srcLogin) {
+          const g = (obj, ...keys) => { for (const k of keys) { if (obj && obj[k] != null) return obj[k]; } return null; };
+          const login = {
+            username: g(srcLogin, 'Username', 'username') || null,
+            password: g(srcLogin, 'Password', 'password') || null,
+            passwordRevisionDate: g(srcLogin, 'PasswordRevisionDate', 'passwordRevisionDate') || null,
+            totp: g(srcLogin, 'Totp', 'totp') || null,
+            autofillOnPageLoad: g(srcLogin, 'AutofillOnPageLoad', 'autofillOnPageLoad') || null,
+          };
+
+          // URIs
+          const uris = g(srcLogin, 'Uris', 'uris') || [];
+          login.uris = uris.map(u => {
+            const uriObj = {
+              uri: g(u, 'Uri', 'uri') || null,
+              match: u.Match ?? u.match ?? null,
+            };
+            const checksum = g(u, 'UriChecksum', 'uriChecksum');
+            if (checksum) uriObj.uriChecksum = checksum;
+            return uriObj;
+          });
+
+          // Fido2 credentials — preserve from original
+          const origLogin = cipher.raw?._original?.Login || cipher.raw?._original?.login || {};
+          const fido2 = g(origLogin, 'Fido2Credentials', 'fido2Credentials') || g(srcLogin, 'Fido2Credentials', 'fido2Credentials');
+          if (fido2) {
+            login.fido2Credentials = fido2.map(k => ({
+              credentialId: g(k, 'CredentialId', 'credentialId') || null,
+              keyType: g(k, 'KeyType', 'keyType') || null,
+              keyAlgorithm: g(k, 'KeyAlgorithm', 'keyAlgorithm') || null,
+              keyCurve: g(k, 'KeyCurve', 'keyCurve') || null,
+              keyValue: g(k, 'KeyValue', 'keyValue') || null,
+              rpId: g(k, 'RpId', 'rpId') || null,
+              rpName: g(k, 'RpName', 'rpName') || null,
+              counter: g(k, 'Counter', 'counter') || null,
+              userHandle: g(k, 'UserHandle', 'userHandle') || null,
+              userName: g(k, 'UserName', 'userName') || null,
+              userDisplayName: g(k, 'UserDisplayName', 'userDisplayName') || null,
+              discoverable: g(k, 'Discoverable', 'discoverable') || null,
+              creationDate: g(k, 'CreationDate', 'creationDate') || null,
+            }));
+          }
+
+          createPayload.login = login;
+        }
+
+        // Fields
+        const fields = updated.Fields || updated.fields;
+        if (fields && fields.length > 0) {
+          createPayload.fields = fields.map(f => ({
+            type: f.Type ?? f.type ?? 0,
+            name: f.Name || f.name || null,
+            value: f.Value || f.value || null,
+            linkedId: f.LinkedId ?? f.linkedId ?? null,
+          }));
+        } else {
+          createPayload.fields = null;
+        }
+
+        // SecureNote / Card / Identity / SshKey — null for login type
+        createPayload.secureNote = null;
+        createPayload.card = null;
+        createPayload.identity = null;
+        createPayload.sshKey = null;
+
+        // Password history
+        const origPH = cipher.raw?._original?.PasswordHistory || cipher.raw?._original?.passwordHistory;
+        createPayload.passwordHistory = origPH ? origPH.map(ph => ({
+          lastUsedDate: ph.LastUsedDate || ph.lastUsedDate || null,
+          password: ph.Password || ph.password || null,
+        })) : null;
+
+        // Step A: Create the new cipher
+        const newCipher = await client.createCipher(createPayload);
+        console.log('[Save] Created new cipher:', newCipher.id || newCipher.Id);
+
+        // Step B: Delete the old cipher
+        try {
+          await client.softDeleteBulk([editedId]);
+          console.log('[Save] Soft-deleted old cipher:', editedId);
+        } catch (delErr) {
+          console.warn('[Save] Failed to delete old cipher (duplicate may remain):', delErr.message);
+          showToast('⚠️ 新条目已创建，但旧条目删除失败，请手动删除', 'warning');
+        }
+      } catch (err) {
+        console.error('[Save] Create-then-delete failed:', err);
+        showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
+        await resyncVault();
+        return;
+      }
+    } else {
+      // ── Normal item: standard PUT update ──
+      try {
+        await client.updateCipher(cipher.id, updated);
+      } catch (err) {
+        console.error('[Save] Server updateCipher failed:', err);
+        showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
+        await resyncVault();
+        return;
+      }
     }
 
     // ── Phase 3: 后台静默 resync 保持一致性 ──
