@@ -222,38 +222,63 @@ export class BitwardenClient {
    * Update a cipher (for merging passkeys)
    */
   async updateCipher(id, cipherData) {
-    // Sanitize payload: remove response-only fields that cause 400 errors
-    const payload = { ...cipherData };
+    // Build a CLEAN payload with only the fields Bitwarden API accepts
+    // Using whitelist approach to avoid sending any response-only fields
+    const src = cipherData;
 
-    // Ensure LastKnownRevisionDate is set (required by Bitwarden API)
-    if (!payload.LastKnownRevisionDate && !payload.lastKnownRevisionDate) {
-      payload.LastKnownRevisionDate = payload.RevisionDate || payload.revisionDate || new Date().toISOString();
+    const payload = {
+      Type: src.Type ?? src.type,
+      OrganizationId: src.OrganizationId || src.organizationId || null,
+      FolderId: src.FolderId || src.folderId || null,
+      Name: src.Name || src.name || null,
+      Notes: src.Notes || src.notes || null,
+      Favorite: src.Favorite ?? src.favorite ?? false,
+      Reprompt: src.Reprompt ?? src.reprompt ?? 0,
+      Fields: src.Fields || src.fields || [],
+      LastKnownRevisionDate: src.RevisionDate || src.revisionDate || src.LastKnownRevisionDate || new Date().toISOString(),
+    };
+
+    // Login-type fields
+    const login = src.Login || src.login;
+    if (login) {
+      payload.Login = {
+        Username: login.Username ?? login.username ?? null,
+        Password: login.Password ?? login.password ?? null,
+        PasswordRevisionDate: login.PasswordRevisionDate || login.passwordRevisionDate || null,
+        Totp: login.Totp ?? login.totp ?? null,
+        Uris: (login.Uris || login.uris || []).map(u => ({
+          Uri: u.Uri || u.uri || null,
+          Match: u.Match ?? u.match ?? null,
+          UriChecksum: u.UriChecksum || u.uriChecksum || null,
+        })),
+        Fido2Credentials: login.Fido2Credentials || login.fido2Credentials || [],
+      };
     }
 
-    const removeKeys = [
-      // Response-only metadata
-      'id', 'Id',
-      'permissions', 'Permissions',
-      'edit', 'Edit',
-      'viewPassword', 'ViewPassword',
-      'archivedDate', 'ArchivedDate',
-      'object', 'Object',
-      'attachments', 'Attachments',
-      'passwordHistory', 'PasswordHistory',
-      'revisionDate', 'RevisionDate',
-      'creationDate', 'CreationDate',
-      'deletedDate', 'DeletedDate',
-      'collectionIds', 'CollectionIds',
-      'data', 'Data',
-      // Internal fields from our sync normalization
-      '_original',
-      // Other response-only fields
-      'sizeName', 'SizeName',
-      'externalId', 'ExternalId',
-    ];
-    for (const key of removeKeys) {
-      delete payload[key];
+    // Card-type fields
+    const card = src.Card || src.card;
+    if (card) {
+      payload.Card = card;
     }
+
+    // Identity-type fields
+    const identity = src.Identity || src.identity;
+    if (identity) {
+      payload.Identity = identity;
+    }
+
+    // SecureNote-type fields
+    const secNote = src.SecureNote || src.secureNote;
+    if (secNote) {
+      payload.SecureNote = secNote;
+    }
+
+    // Per-item encryption key (required if present)
+    if (src.Key || src.key) {
+      payload.Key = src.Key || src.key;
+    }
+
+    console.log(`[updateCipher] PUT /ciphers/${id}`, JSON.stringify(payload).substring(0, 1200));
 
     const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`, {
       method: 'PUT',
@@ -262,6 +287,7 @@ export class BitwardenClient {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      console.error(`[updateCipher] FAILED for ${id}:`, JSON.stringify(err));
       throw new Error(`Update cipher failed: ${res.status} - ${err.Message || JSON.stringify(err)}`);
     }
     return res.json();
