@@ -2039,17 +2039,23 @@ async function saveEditedCipher(cipher) {
       login.Password = login.password = await encryptString(password, encKey);
       login.Totp = login.totp = totp ? await encryptString(totp, encKey) : null;
 
-      // URIs
+      // URIs — preserve original encrypted objects (with uriChecksum) for unchanged URIs
       const uriInputs = [...document.querySelectorAll('.edit-uri')];
+      const originalUris = cipher.raw?._original?.Login?.Uris || cipher.raw?._original?.Login?.uris || cipher.raw?._original?.login?.Uris || cipher.raw?._original?.login?.uris || [];
+      const originalDecryptedUris = cipher.decrypted?.uris || [];
       const uris = [];
-      for (const input of uriInputs) {
-        const val = input.value.trim();
-        if (val) {
+      for (let i = 0; i < uriInputs.length; i++) {
+        const val = uriInputs[i].value.trim();
+        if (!val) continue;
+        // If this URI index exists in the original and the plaintext hasn't changed, keep the original encrypted object
+        if (i < originalDecryptedUris.length && i < originalUris.length && val === originalDecryptedUris[i]) {
+          // Preserve the full original URI object (including uriChecksum)
+          uris.push(originalUris[i]);
+        } else {
+          // URI was changed or is new — re-encrypt (no checksum, server will compute it)
           uris.push({
             Uri: await encryptString(val, encKey),
-            uri: await encryptString(val, encKey),
             Match: null,
-            match: null,
           });
         }
       }

@@ -314,12 +314,24 @@ export class BitwardenClient {
         payload.Login.PasswordRevisionDate = srcLogin.PasswordRevisionDate || srcLogin.passwordRevisionDate || payload.Login.PasswordRevisionDate || null;
       if ('Totp' in srcLogin || 'totp' in srcLogin)
         payload.Login.Totp = srcLogin.Totp ?? srcLogin.totp ?? payload.Login.Totp ?? null;
-      if (srcLogin.Uris || srcLogin.uris)
-        payload.Login.Uris = (srcLogin.Uris || srcLogin.uris || []).map(u => ({
-          Uri: u.Uri || u.uri || null,
-          Match: u.Match ?? u.match ?? null,
-          UriChecksum: u.UriChecksum || u.uriChecksum || null,
-        }));
+      if (srcLogin.Uris || srcLogin.uris) {
+        const srcUris = srcLogin.Uris || srcLogin.uris || [];
+        payload.Login.Uris = srcUris.map(u => {
+          // If the URI object already has a checksum, it's an unchanged original — pass through as-is
+          if (u.UriChecksum || u.uriChecksum) {
+            return {
+              Uri: u.Uri || u.uri || null,
+              Match: u.Match ?? u.match ?? null,
+              UriChecksum: u.UriChecksum || u.uriChecksum || null,
+            };
+          }
+          // New or changed URI — no checksum needed, server will compute
+          return {
+            Uri: u.Uri || u.uri || null,
+            Match: u.Match ?? u.match ?? null,
+          };
+        });
+      }
       if (srcLogin.Fido2Credentials || srcLogin.fido2Credentials)
         payload.Login.Fido2Credentials = srcLogin.Fido2Credentials || srcLogin.fido2Credentials || payload.Login.Fido2Credentials || [];
       delete payload.login;
