@@ -2794,6 +2794,24 @@ async function handleMerge(groups) {
               }
             }
 
+            // URI optimization: re-encrypt simplified URIs
+            if (op.uriOptimizations && !isDemoMode) {
+              const login = op.data.Login || op.data.login;
+              if (login) {
+                const uris = login.Uris || login.uris || [];
+                for (const opt of op.uriOptimizations) {
+                  if (uris[opt.index]) {
+                    const encUri = await encryptString(opt.optimizedUri, symmetricKey);
+                    if (uris[opt.index].Uri !== undefined) uris[opt.index].Uri = encUri;
+                    if (uris[opt.index].uri !== undefined) uris[opt.index].uri = encUri;
+                    // Clear checksum since URI value changed
+                    if (uris[opt.index].UriChecksum !== undefined) uris[opt.index].UriChecksum = null;
+                    if (uris[opt.index].uriChecksum !== undefined) uris[opt.index].uriChecksum = null;
+                  }
+                }
+              }
+            }
+
             console.log(`[Merge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
             const updateResult = await client.updateCipher(op.id, op.data);
             console.log(`[Merge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));
@@ -2957,6 +2975,24 @@ async function handleSingleMerge(groups, gi, btnEl) {
             if (op.data.notes !== undefined) op.data.notes = encNotes;
           }
         }
+
+        // URI optimization: re-encrypt simplified URIs
+        if (op.uriOptimizations && !isDemoMode) {
+          const login = op.data.Login || op.data.login;
+          if (login) {
+            const uris = login.Uris || login.uris || [];
+            for (const opt of op.uriOptimizations) {
+              if (uris[opt.index]) {
+                const encUri = await encryptString(opt.optimizedUri, symmetricKey);
+                if (uris[opt.index].Uri !== undefined) uris[opt.index].Uri = encUri;
+                if (uris[opt.index].uri !== undefined) uris[opt.index].uri = encUri;
+                if (uris[opt.index].UriChecksum !== undefined) uris[opt.index].UriChecksum = null;
+                if (uris[opt.index].uriChecksum !== undefined) uris[opt.index].uriChecksum = null;
+              }
+            }
+          }
+        }
+
         console.log(`[SingleMerge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
         const updateResult = await client.updateCipher(op.id, op.data);
         console.log(`[SingleMerge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));

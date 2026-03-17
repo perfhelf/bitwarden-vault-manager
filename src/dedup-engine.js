@@ -422,10 +422,11 @@ export function buildMergeOperations(selectedGroups) {
       }
     }
 
-    // === 8. URI Domain Dedup: keep only shortest URL per domain ===
+    // === 8. URI Optimization: strip to protocol://host + dedup by origin ===
+    let uriOptimizations = null; // will be [{index, optimizedUri}] if any changes
     if (keepLogin) {
       const currentUris = keepLogin.Uris || keepLogin.uris || [];
-      if (currentUris.length > 1) {
+      if (currentUris.length > 0) {
         // Build encrypted→decrypted URI mapping from all group items
         const encToDecMap = new Map();
         for (const item of group.items) {
@@ -439,35 +440,56 @@ export function buildMergeOperations(selectedGroups) {
           }
         }
 
-        // Group URIs by origin (protocol + host)
-        const getOrigin = (url) => {
-          try { return new URL(url).origin; } catch { return url; }
+        // Simplify URL: keep only protocol://hostname
+        const simplifyUrl = (url) => {
+          try {
+            const u = new URL(url);
+            return u.origin; // e.g. "https://javbus.com"
+          } catch {
+            return url; // not a valid URL, keep as-is
+          }
         };
 
-        const byOrigin = new Map(); // origin → [{encUri, decUri, uriObj, len}]
-        for (const uriObj of currentUris) {
+        // Step A: Simplify all URIs and group by simplified origin
+        const byOrigin = new Map(); // origin → [{uriObj, decVal, simplified, index}]
+        for (let idx = 0; idx < currentUris.length; idx++) {
+          const uriObj = currentUris[idx];
           const encVal = uriObj.Uri || uriObj.uri || '';
           const decVal = encToDecMap.get(encVal) || '';
-          const origin = decVal ? getOrigin(decVal) : encVal;
+          const simplified = decVal ? simplifyUrl(decVal) : '';
+          const origin = simplified || encVal;
           if (!byOrigin.has(origin)) byOrigin.set(origin, []);
-          byOrigin.get(origin).push({ uriObj, decVal, len: decVal.length || 999 });
+          byOrigin.get(origin).push({ uriObj, decVal, simplified, index: idx });
         }
 
-        // For each origin with multiple URIs, keep only the shortest
-        const deduped = [];
-        for (const [, entries] of byOrigin) {
-          if (entries.length > 1) {
-            entries.sort((a, b) => a.len - b.len);
-            deduped.push(entries[0].uriObj); // keep shortest
+        // Step B: Keep one URI per origin, optimize its value
+        const finalUris = [];
+        const optimizations = [];
+        for (const [origin, entries] of byOrigin) {
+          // Keep only the first entry (others are redundant for same origin)
+          const keep = entries[0];
+          finalUris.push(keep.uriObj);
+
+          // Mark duplicates removed
+          if (entries.length > 1) needsUpdate = true;
+
+          // If the kept URI has path/query, optimize it to just the origin
+          if (keep.decVal && keep.simplified && keep.simplified !== keep.decVal) {
+            optimizations.push({
+              index: finalUris.length - 1, // index in finalUris
+              optimizedUri: keep.simplified, // plaintext to re-encrypt
+            });
             needsUpdate = true;
-          } else {
-            deduped.push(entries[0].uriObj);
           }
         }
 
-        if (deduped.length < currentUris.length) {
-          if (keepLogin.Uris !== undefined) keepLogin.Uris = deduped;
-          if (keepLogin.uris !== undefined) keepLogin.uris = deduped;
+        // Apply URI list reduction
+        if (finalUris.length < currentUris.length || optimizations.length > 0) {
+          if (keepLogin.Uris !== undefined) keepLogin.Uris = finalUris;
+          if (keepLogin.uris !== undefined) keepLogin.uris = finalUris;
+        }
+        if (optimizations.length > 0) {
+          uriOptimizations = optimizations;
         }
       }
     }
@@ -490,6 +512,7 @@ export function buildMergeOperations(selectedGroups) {
           data: updatedCipher,
           titleOverride,    // null or new decrypted title
           notesAppend,      // null or text to append
+          uriOptimizations, // null or [{index, optimizedUri}]
         });
       }
     }
