@@ -337,6 +337,27 @@ export class BitwardenClient {
   }
 
   /**
+   * Create a new cipher (for merge: create-then-delete strategy)
+   * Accepts a fully constructed CipherRequest payload (camelCase, encrypted fields)
+   */
+  async createCipher(cipherPayload) {
+    console.log('[createCipher] POST /ciphers', JSON.stringify(cipherPayload).substring(0, 1500));
+    const res = await this._authedFetch(`${this.apiUrl}/ciphers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cipherPayload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('[createCipher] FAILED:', JSON.stringify(err));
+      throw new Error(`Create cipher failed: ${res.status} - ${err.Message || err.message || JSON.stringify(err)}`);
+    }
+    const result = await res.json();
+    console.log('[createCipher] SUCCESS, new id:', result.id || result.Id);
+    return result;
+  }
+
+  /**
    * Soft-delete ciphers in bulk (moves to trash)
    */
   async softDeleteBulk(ids) {

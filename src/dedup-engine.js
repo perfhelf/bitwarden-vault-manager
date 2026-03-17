@@ -288,14 +288,14 @@ function sortByQuality(items) {
  *   notesAppend: text to append to decrypted notes (needs re-encryption)
  */
 export function buildMergeOperations(selectedGroups) {
-  const toUpdate = [];
-  const toDelete = [];
+  const toCreate = [];  // Path B: new items to create (decrypted plaintext)
+  const toUpdate = [];  // Path C: passkey items to update (encrypted _original)
+  const toDelete = [];  // IDs to soft-delete
   const errors = [];
 
   for (const group of selectedGroups) {
     const keepItem = group.keepItem;
     const removeItems = group.items.filter(i => i.id !== keepItem.id);
-
     if (removeItems.length === 0) continue;
 
     // === Path A: Pure Delete (100% identical) ===
@@ -304,226 +304,280 @@ export function buildMergeOperations(selectedGroups) {
       continue;
     }
 
-    // === Path B: Fusion Merge (has differences) ===
-    const base = keepItem.raw?._original;
-    if (!base) {
-      // No _original available → can only delete, warn user
-      errors.push({
-        groupLabel: group.label,
-        reason: '缺少原始数据 (_original)，无法合并，仅执行删除',
-      });
-      for (const item of removeItems) toDelete.push(item.id);
-      continue;
-    }
+    // Check if any item has passkeys
+    const hasPasskeys = group.items.some(i =>
+      (i.raw?.Login?.Fido2Credentials?.length || 0) > 0
+    );
 
-    let needsUpdate = false;
-    const updatedCipher = JSON.parse(JSON.stringify(base));
-    const keepLogin = updatedCipher.Login || updatedCipher.login;
-
-    // === Smart Title Selection ===
-    const allNames = group.items.map(i => i.decrypted?.name || '').filter(Boolean);
-    const uniqueNames = [...new Set(allNames)];
-    let titleOverride = null;
-    let notesAppend = null;
-
-    if (uniqueNames.length > 1) {
-      const { chosen, discarded } = chooseBestTitle(uniqueNames);
-      if (chosen !== keepItem.decrypted?.name) {
-        titleOverride = chosen;
-        needsUpdate = true;
-      }
-      if (discarded.length > 0) {
-        notesAppend = `\n合并前的其他标题: ${discarded.join(', ')}`;
-        needsUpdate = true;
-      }
-    }
-
-    for (const item of removeItems) {
-      const removeRaw = item.raw?._original || item.raw;
-
-      // 1. Merge passkeys (Fido2Credentials)
-      if (keepLogin && removeRaw?.Login?.Fido2Credentials?.length > 0) {
-        const existing = keepLogin.Fido2Credentials || keepLogin.fido2Credentials || [];
-        const seenIds = new Set(existing.map(p => p.CredentialId || p.credentialId));
-        const newPasskeys = (removeRaw.Login.Fido2Credentials || []).filter(
-          p => !seenIds.has(p.CredentialId || p.credentialId)
-        );
-        if (newPasskeys.length > 0) {
-          const merged = [...existing, ...newPasskeys];
-          if (keepLogin.Fido2Credentials !== undefined) keepLogin.Fido2Credentials = merged;
-          if (keepLogin.fido2Credentials !== undefined) keepLogin.fido2Credentials = merged;
-          needsUpdate = true;
-        }
-      }
-
-      // 2. Merge URIs (combine unique by encrypted value)
-      if (keepLogin && removeRaw?.Login) {
-        const removeUris = removeRaw.Login.Uris || removeRaw.Login.uris || [];
-        const existingUris = keepLogin.Uris || keepLogin.uris || [];
-        const seenValues = new Set(existingUris.map(u => u.Uri || u.uri));
-        const newUris = removeUris.filter(u => !seenValues.has(u.Uri || u.uri));
-        if (newUris.length > 0) {
-          const merged = [...existingUris, ...newUris];
-          if (keepLogin.Uris !== undefined) keepLogin.Uris = merged;
-          if (keepLogin.uris !== undefined) keepLogin.uris = merged;
-          needsUpdate = true;
-        }
-      }
-
-      // 3. Merge TOTP (keep if either has it)
-      if (keepLogin && removeRaw?.Login) {
-        const keepTotp = keepLogin.Totp || keepLogin.totp;
-        const removeTotp = removeRaw.Login.Totp || removeRaw.Login.totp;
-        if (!keepTotp && removeTotp) {
-          if (keepLogin.Totp !== undefined) keepLogin.Totp = removeTotp;
-          if (keepLogin.totp !== undefined) keepLogin.totp = removeTotp;
-          needsUpdate = true;
-        }
-      }
-
-      // 4. Merge custom fields (combine unique by encrypted name)
-      const removeFields = removeRaw.Fields || removeRaw.fields || [];
-      const existingFields = updatedCipher.Fields || updatedCipher.fields || [];
-      if (removeFields.length > 0) {
-        const seenNames = new Set(existingFields.map(f => f.Name || f.name));
-        const newFields = removeFields.filter(f => !seenNames.has(f.Name || f.name));
-        if (newFields.length > 0) {
-          const merged = [...existingFields, ...newFields];
-          updatedCipher.Fields = merged;
-          if (updatedCipher.fields !== undefined) updatedCipher.fields = merged;
-          needsUpdate = true;
-        }
-      }
-
-      // 5. Merge notes (keep longer one)
-      const keepNotes = updatedCipher.Notes || updatedCipher.notes || '';
-      const removeNotes = removeRaw.Notes || removeRaw.notes || '';
-      if (removeNotes && (!keepNotes || removeNotes.length > keepNotes.length)) {
-        updatedCipher.Notes = removeNotes;
-        if (updatedCipher.notes !== undefined) updatedCipher.notes = removeNotes;
-        needsUpdate = true;
-      }
-
-      // 6. Merge Favorite (any true → keep true)
-      const removeFav = removeRaw.Favorite || removeRaw.favorite;
-      if (removeFav && !(updatedCipher.Favorite || updatedCipher.favorite)) {
-        updatedCipher.Favorite = true;
-        if (updatedCipher.favorite !== undefined) updatedCipher.favorite = true;
-        needsUpdate = true;
-      }
-
-      // 7. Merge Reprompt (any 1 → keep 1)
-      const removeReprompt = removeRaw.Reprompt ?? removeRaw.reprompt ?? 0;
-      const keepReprompt = updatedCipher.Reprompt ?? updatedCipher.reprompt ?? 0;
-      if (removeReprompt === 1 && keepReprompt !== 1) {
-        updatedCipher.Reprompt = 1;
-        if (updatedCipher.reprompt !== undefined) updatedCipher.reprompt = 1;
-        needsUpdate = true;
-      }
-    }
-
-    // === 8. URI Optimization: strip to protocol://host + dedup by origin ===
-    let uriOptimizations = null; // will be [{index, optimizedUri}] if any changes
-    if (keepLogin) {
-      const currentUris = keepLogin.Uris || keepLogin.uris || [];
-      if (currentUris.length > 0) {
-        // Build encrypted→decrypted URI mapping from all group items
-        const encToDecMap = new Map();
-        for (const item of group.items) {
-          const decUris = item.decrypted?.uris || [];
-          const rawLogin = item.raw?._original?.Login || item.raw?._original?.login || item.raw?.Login || item.raw?.login || {};
-          const rawUris = rawLogin.Uris || rawLogin.uris || [];
-          for (let k = 0; k < Math.min(decUris.length, rawUris.length); k++) {
-            const encVal = rawUris[k]?.Uri || rawUris[k]?.uri || '';
-            const decVal = decUris[k] || '';
-            if (encVal && decVal) encToDecMap.set(encVal, decVal);
-          }
-        }
-
-        // Simplify URL: keep only protocol://hostname
-        const simplifyUrl = (url) => {
-          try {
-            const u = new URL(url);
-            return u.origin; // e.g. "https://javbus.com"
-          } catch {
-            return url; // not a valid URL, keep as-is
-          }
-        };
-
-        // Step A: Simplify all URIs and group by simplified origin
-        const byOrigin = new Map(); // origin → [{uriObj, decVal, simplified, index}]
-        for (let idx = 0; idx < currentUris.length; idx++) {
-          const uriObj = currentUris[idx];
-          const encVal = uriObj.Uri || uriObj.uri || '';
-          const decVal = encToDecMap.get(encVal) || '';
-          const simplified = decVal ? simplifyUrl(decVal) : '';
-          const origin = simplified || encVal;
-          if (!byOrigin.has(origin)) byOrigin.set(origin, []);
-          byOrigin.get(origin).push({ uriObj, decVal, simplified, index: idx });
-        }
-
-        // Step B: Keep one URI per origin, optimize its value
-        const finalUris = [];
-        const optimizations = [];
-        for (const [origin, entries] of byOrigin) {
-          // Keep only the first entry (others are redundant for same origin)
-          const keep = entries[0];
-          finalUris.push(keep.uriObj);
-
-          // Mark duplicates removed
-          if (entries.length > 1) needsUpdate = true;
-
-          // If the kept URI has path/query, optimize it to just the origin
-          if (keep.decVal && keep.simplified && keep.simplified !== keep.decVal) {
-            optimizations.push({
-              index: finalUris.length - 1, // index in finalUris
-              optimizedUri: keep.simplified, // plaintext to re-encrypt
-            });
-            needsUpdate = true;
-          }
-        }
-
-        // Apply URI list reduction
-        if (finalUris.length < currentUris.length || optimizations.length > 0) {
-          if (keepLogin.Uris !== undefined) keepLogin.Uris = finalUris;
-          if (keepLogin.uris !== undefined) keepLogin.uris = finalUris;
-        }
-        if (optimizations.length > 0) {
-          uriOptimizations = optimizations;
-        }
-      }
-    }
-
-    if (needsUpdate) {
-      if (keepLogin) {
-        updatedCipher.Login = keepLogin;
-        if (updatedCipher.login !== undefined) updatedCipher.login = keepLogin;
-      }
-
-      // Validate critical fields exist before submitting
-      if (!updatedCipher.Name && !updatedCipher.name) {
-        errors.push({
-          groupLabel: group.label,
-          reason: '合并后缺少 Name 字段，跳过更新',
-        });
-      } else {
-        toUpdate.push({
-          id: keepItem.id,
-          data: updatedCipher,
-          titleOverride,    // null or new decrypted title
-          notesAppend,      // null or text to append
-          uriOptimizations, // null or [{index, optimizedUri}]
-        });
-      }
-    }
-
-    // Mark remove items for deletion
-    for (const item of removeItems) {
-      toDelete.push(item.id);
+    if (hasPasskeys) {
+      // === Path C: Update passkey item (keep passkey holder, merge others into it) ===
+      buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, toDelete, errors);
+    } else {
+      // === Path B: Create-Then-Delete (no passkeys, safe to create new) ===
+      buildPathB_CreateThenDelete(group, keepItem, removeItems, toCreate, toDelete, errors);
     }
   }
 
-  return { toUpdate, toDelete, errors };
+  return { toCreate, toUpdate, toDelete, errors };
+}
+
+/**
+ * Path B: Create a new merged item from decrypted data, then delete all originals.
+ * Outputs a toCreate entry with plaintext fields ready for encryption.
+ */
+function buildPathB_CreateThenDelete(group, keepItem, removeItems, toCreate, toDelete, errors) {
+  const allItems = group.items;
+
+  // === 1. Smart Title Selection ===
+  const allNames = allItems.map(i => i.decrypted?.name || '').filter(Boolean);
+  const uniqueNames = [...new Set(allNames)];
+  const { chosen: bestTitle, discarded: discardedTitles } = chooseBestTitle(uniqueNames);
+
+  // === 2. Notes: longest + append discarded titles ===
+  let bestNotes = '';
+  for (const item of allItems) {
+    const n = item.decrypted?.notes || '';
+    if (n.length > bestNotes.length) bestNotes = n;
+  }
+  if (discardedTitles.length > 0) {
+    bestNotes = (bestNotes ? bestNotes + '\n' : '') + `合并前的其他标题: ${discardedTitles.join(', ')}`;
+  }
+
+  // === 3. Username & Password: from keepItem (highest quality) ===
+  const username = keepItem.decrypted?.username || '';
+  const password = keepItem.decrypted?.password || '';
+
+  // === 4. TOTP: from whichever has it ===
+  let totp = '';
+  for (const item of allItems) {
+    if (item.decrypted?.totp) { totp = item.decrypted.totp; break; }
+  }
+
+  // === 5. URIs: union of all unique URIs, with URL simplification ===
+  const seenOrigins = new Set();
+  const mergedUris = [];
+  for (const item of allItems) {
+    const uris = item.decrypted?.uris || [];
+    for (const uri of uris) {
+      if (!uri) continue;
+      const simplified = simplifyUrl(uri);
+      if (!seenOrigins.has(simplified)) {
+        seenOrigins.add(simplified);
+        mergedUris.push(simplified); // Use simplified URL
+      }
+    }
+  }
+
+  // === 6. Custom Fields: union by name ===
+  const seenFieldNames = new Set();
+  const mergedFields = [];
+  for (const item of allItems) {
+    const fields = item.decrypted?.fields || [];
+    for (const f of fields) {
+      const key = f.name || '';
+      if (!seenFieldNames.has(key)) {
+        seenFieldNames.add(key);
+        mergedFields.push({ name: f.name || '', value: f.value || '', type: f.type ?? 0 });
+      }
+    }
+  }
+
+  // === 7. Favorite & Reprompt: OR of all ===
+  const favorite = allItems.some(i => i.raw?.Favorite || i.raw?.favorite);
+  const reprompt = allItems.some(i => (i.raw?.Reprompt ?? i.raw?.reprompt ?? 0) === 1) ? 1 : 0;
+
+  // === 8. FolderId: from keepItem ===
+  const folderId = keepItem.raw?.FolderId || keepItem.raw?.folderId || null;
+
+  // === 9. Type: from keepItem (should be 1 for Login) ===
+  const type = keepItem.raw?.Type ?? keepItem.raw?.type ?? 1;
+
+  toCreate.push({
+    groupLabel: group.label,
+    type,
+    name: bestTitle,
+    notes: bestNotes || null,
+    username,
+    password,
+    totp: totp || null,
+    uris: mergedUris,
+    fields: mergedFields.length > 0 ? mergedFields : null,
+    folderId,
+    favorite,
+    reprompt,
+    // PasswordHistory: merge from all items (raw encrypted, pass through)
+    passwordHistory: collectPasswordHistory(allItems),
+  });
+
+  // Delete ALL originals (including keepItem — we're creating a new one)
+  for (const item of allItems) {
+    toDelete.push(item.id);
+  }
+}
+
+/**
+ * Path C: Merge data into the passkey-holding item via updateCipher.
+ * The passkey item MUST be preserved (passkeys are tied to cipher Key).
+ */
+function buildPathC_UpdatePasskeyItem(group, keepItem, removeItems, toUpdate, toDelete, errors) {
+  const base = keepItem.raw?._original;
+  if (!base) {
+    errors.push({
+      groupLabel: group.label,
+      reason: '缺少原始数据 (_original)，无法合并通行密钥条目，仅执行删除',
+    });
+    for (const item of removeItems) toDelete.push(item.id);
+    return;
+  }
+
+  let needsUpdate = false;
+  const updatedCipher = JSON.parse(JSON.stringify(base));
+  const keepLogin = updatedCipher.Login || updatedCipher.login;
+
+  // === Smart Title Selection ===
+  const allNames = group.items.map(i => i.decrypted?.name || '').filter(Boolean);
+  const uniqueNames = [...new Set(allNames)];
+  let titleOverride = null;
+  let notesAppend = null;
+
+  if (uniqueNames.length > 1) {
+    const { chosen, discarded } = chooseBestTitle(uniqueNames);
+    if (chosen !== keepItem.decrypted?.name) {
+      titleOverride = chosen;
+      needsUpdate = true;
+    }
+    if (discarded.length > 0) {
+      notesAppend = `\n合并前的其他标题: ${discarded.join(', ')}`;
+      needsUpdate = true;
+    }
+  }
+
+  for (const item of removeItems) {
+    const removeRaw = item.raw?._original || item.raw;
+
+    // 1. Merge URIs
+    if (keepLogin && removeRaw?.Login) {
+      const removeUris = removeRaw.Login.Uris || removeRaw.Login.uris || [];
+      const existingUris = keepLogin.Uris || keepLogin.uris || [];
+      const seenValues = new Set(existingUris.map(u => u.Uri || u.uri));
+      const newUris = removeUris.filter(u => !seenValues.has(u.Uri || u.uri));
+      if (newUris.length > 0) {
+        const merged = [...existingUris, ...newUris];
+        if (keepLogin.Uris !== undefined) keepLogin.Uris = merged;
+        if (keepLogin.uris !== undefined) keepLogin.uris = merged;
+        needsUpdate = true;
+      }
+    }
+
+    // 2. Merge TOTP
+    if (keepLogin && removeRaw?.Login) {
+      const keepTotp = keepLogin.Totp || keepLogin.totp;
+      const removeTotp = removeRaw.Login.Totp || removeRaw.Login.totp;
+      if (!keepTotp && removeTotp) {
+        if (keepLogin.Totp !== undefined) keepLogin.Totp = removeTotp;
+        if (keepLogin.totp !== undefined) keepLogin.totp = removeTotp;
+        needsUpdate = true;
+      }
+    }
+
+    // 3. Merge custom fields
+    const removeFields = removeRaw.Fields || removeRaw.fields || [];
+    const existingFields = updatedCipher.Fields || updatedCipher.fields || [];
+    if (removeFields.length > 0) {
+      const seenNames = new Set(existingFields.map(f => f.Name || f.name));
+      const newFields = removeFields.filter(f => !seenNames.has(f.Name || f.name));
+      if (newFields.length > 0) {
+        const merged = [...existingFields, ...newFields];
+        updatedCipher.Fields = merged;
+        if (updatedCipher.fields !== undefined) updatedCipher.fields = merged;
+        needsUpdate = true;
+      }
+    }
+
+    // 4. Merge notes (keep longer one)
+    const keepNotes = updatedCipher.Notes || updatedCipher.notes || '';
+    const removeNotes = removeRaw.Notes || removeRaw.notes || '';
+    if (removeNotes && (!keepNotes || removeNotes.length > keepNotes.length)) {
+      updatedCipher.Notes = removeNotes;
+      if (updatedCipher.notes !== undefined) updatedCipher.notes = removeNotes;
+      needsUpdate = true;
+    }
+
+    // 5. Merge Favorite
+    const removeFav = removeRaw.Favorite || removeRaw.favorite;
+    if (removeFav && !(updatedCipher.Favorite || updatedCipher.favorite)) {
+      updatedCipher.Favorite = true;
+      if (updatedCipher.favorite !== undefined) updatedCipher.favorite = true;
+      needsUpdate = true;
+    }
+
+    // 6. Merge Reprompt
+    const removeReprompt = removeRaw.Reprompt ?? removeRaw.reprompt ?? 0;
+    const keepReprompt = updatedCipher.Reprompt ?? updatedCipher.reprompt ?? 0;
+    if (removeReprompt === 1 && keepReprompt !== 1) {
+      updatedCipher.Reprompt = 1;
+      if (updatedCipher.reprompt !== undefined) updatedCipher.reprompt = 1;
+      needsUpdate = true;
+    }
+  }
+
+  if (needsUpdate) {
+    if (keepLogin) {
+      updatedCipher.Login = keepLogin;
+      if (updatedCipher.login !== undefined) updatedCipher.login = keepLogin;
+    }
+
+    if (!updatedCipher.Name && !updatedCipher.name) {
+      errors.push({
+        groupLabel: group.label,
+        reason: '合并后缺少 Name 字段，跳过更新',
+      });
+    } else {
+      toUpdate.push({
+        id: keepItem.id,
+        data: updatedCipher,
+        titleOverride,
+        notesAppend,
+        uriOptimizations: null,  // Path C doesn't do URI optimization (encrypted data)
+      });
+    }
+  }
+
+  // Delete remove items (NOT keepItem — it holds the passkeys)
+  for (const item of removeItems) {
+    toDelete.push(item.id);
+  }
+}
+
+/**
+ * Collect password history from all items (raw encrypted, pass through)
+ */
+function collectPasswordHistory(allItems) {
+  const history = [];
+  const seen = new Set();
+  for (const item of allItems) {
+    const ph = item.raw?._original?.PasswordHistory || item.raw?.PasswordHistory || [];
+    for (const h of ph) {
+      const key = (h.Password || h.password || '') + '|' + (h.LastUsedDate || h.lastUsedDate || '');
+      if (!seen.has(key)) {
+        seen.add(key);
+        history.push(h);
+      }
+    }
+  }
+  return history.length > 0 ? history : null;
+}
+
+/**
+ * Simplify URL to just protocol://hostname
+ */
+function simplifyUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.origin;
+  } catch {
+    return url;
+  }
 }
 
 /**

@@ -3240,7 +3240,7 @@ async function handleMerge(groups) {
 
       try {
         const operations = buildMergeOperations(allGroups);
-        const totalSteps = operations.toUpdate.length + (operations.toDelete.length > 0 ? 1 : 0);
+        const totalSteps = (operations.toCreate?.length || 0) + operations.toUpdate.length + (operations.toDelete.length > 0 ? 1 : 0);
         let completedSteps = 0;
 
         // Engine-level errors
@@ -3250,16 +3250,42 @@ async function handleMerge(groups) {
           }
         }
 
-        // Execute updates — continue on each error
+        // === Path B: Create new merged items (encrypt → POST → verify) ===
+        const createdIds = []; // Track successfully created item IDs
+        const failedCreateGroupLabels = new Set();
+        for (let idx = 0; idx < (operations.toCreate?.length || 0); idx++) {
+          const op = operations.toCreate[idx];
+          completedSteps++;
+          const pct = Math.round((completedSteps / totalSteps) * 100);
+          updateMergeProgress(pct, `新建合并条目 ${idx + 1}/${operations.toCreate.length}...`);
+
+          try {
+            const payload = await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
+            console.log('[Merge] Path B createCipher:', op.groupLabel);
+            const result = await client.createCipher(payload);
+            const newId = result.id || result.Id;
+            if (!newId) throw new Error('创建成功但未返回ID');
+            createdIds.push(newId);
+            successGroups++;
+          } catch (err) {
+            console.error(`[Merge] createCipher failed for ${op.groupLabel}:`, err);
+            failedCreateGroupLabels.add(op.groupLabel);
+            failures.push({
+              label: op.groupLabel,
+              reason: `新建合并条目失败: ${err.message}`,
+            });
+          }
+        }
+
+        // === Path C: Update passkey items (existing updateCipher logic) ===
         const failedKeepIds = new Set();
         for (let idx = 0; idx < operations.toUpdate.length; idx++) {
           const op = operations.toUpdate[idx];
           completedSteps++;
           const pct = Math.round((completedSteps / totalSteps) * 100);
-          updateMergeProgress(pct, `合并 ${idx + 1}/${operations.toUpdate.length}...`);
+          updateMergeProgress(pct, `更新通行密钥条目 ${idx + 1}/${operations.toUpdate.length}...`);
 
           try {
-            // Smart title re-encrypt
             if (op.titleOverride) {
               if (isDemoMode) {
                 op.data.Name = op.titleOverride;
@@ -3270,8 +3296,6 @@ async function handleMerge(groups) {
                 if (op.data.name !== undefined) op.data.name = encTitle;
               }
             }
-
-            // Notes append
             if (op.notesAppend) {
               if (isDemoMode) {
                 const currentNotes = op.data.Notes || op.data.notes || '';
@@ -3292,40 +3316,33 @@ async function handleMerge(groups) {
               }
             }
 
-            // URI optimization re-encrypt
-            if (op.uriOptimizations && !isDemoMode) {
-              const login = op.data.Login || op.data.login;
-              if (login) {
-                const uris = login.Uris || login.uris || [];
-                for (const opt of op.uriOptimizations) {
-                  if (uris[opt.index]) {
-                    const encUri = await encryptString(opt.optimizedUri, symmetricKey);
-                    if (uris[opt.index].Uri !== undefined) uris[opt.index].Uri = encUri;
-                    if (uris[opt.index].uri !== undefined) uris[opt.index].uri = encUri;
-                    if (uris[opt.index].UriChecksum !== undefined) uris[opt.index].UriChecksum = null;
-                    if (uris[opt.index].uriChecksum !== undefined) uris[opt.index].uriChecksum = null;
-                  }
-                }
-              }
-            }
-
             const updateResult = await client.updateCipher(op.id, op.data);
             successGroups++;
           } catch (err) {
             console.error(`[Merge] updateCipher ${op.id} failed:`, err);
             failedKeepIds.add(op.id);
-            // Find group label for this op
             const matchGroup = allGroups.find(g => g.keepItem?.id === op.id);
             failures.push({
-              label: matchGroup?.label || matchGroup?.matchKey || op.id,
-              reason: `合并失败: ${err.message}`,
+              label: matchGroup?.label || op.id,
+              reason: `通行密钥条目更新失败: ${err.message}`,
             });
           }
         }
 
-        // Execute deletes — ALWAYS proceed even if update failed
-        // When update fails, keepItem stays as-is, but duplicates should still be removed
-        const safeToDelete = operations.toDelete;
+        // === Delete: only items from successful create/update groups ===
+        // For Path B failed creates: DO NOT delete original items (they're still needed)
+        // For Path C failed updates: still delete duplicates (keepItem stays as-is)
+        let safeToDelete = operations.toDelete;
+        if (failedCreateGroupLabels.size > 0) {
+          // Remove IDs belonging to failed-create groups from deletion list
+          const failedGroupItems = new Set();
+          for (const group of allGroups) {
+            if (failedCreateGroupLabels.has(group.label)) {
+              for (const item of group.items) failedGroupItems.add(item.id);
+            }
+          }
+          safeToDelete = safeToDelete.filter(id => !failedGroupItems.has(id));
+        }
         if (safeToDelete.length > 0) {
           updateMergeProgress(95, `清理 ${safeToDelete.length} 个重复条目...`);
           try {
@@ -3339,8 +3356,8 @@ async function handleMerge(groups) {
           }
         }
 
-        // Also count pure-delete groups as successes
-        const pureDeleteGroups = allGroups.filter(g => g.pureDelete && !failedKeepIds.has(g.keepItem?.id));
+        // Count pure-delete groups as successes
+        const pureDeleteGroups = allGroups.filter(g => g.pureDelete);
         successGroups += pureDeleteGroups.length;
 
         updateMergeProgress(100, '完成！');
@@ -3378,6 +3395,69 @@ function updateMergeLockUI(locked) {
   });
   const mergeBtn = $('#merge-btn');
   if (mergeBtn) mergeBtn.disabled = locked;
+}
+
+/**
+ * Build a POST /ciphers payload from plaintext merged data.
+ * Encrypts all fields using the symmetric key.
+ * Follows the official Bitwarden CipherRequest model (camelCase).
+ */
+async function buildCipherCreatePayload(op, isDemoMode, symKey) {
+  const enc = async (val) => {
+    if (!val) return null;
+    return isDemoMode ? val : await encryptString(val, symKey);
+  };
+
+  const payload = {
+    type: op.type ?? 1,
+    organizationId: null,
+    folderId: op.folderId || null,
+    name: await enc(op.name || '(无标题)'),
+    notes: await enc(op.notes),
+    favorite: op.favorite || false,
+    reprompt: op.reprompt ?? 0,
+  };
+
+  // Login
+  if (op.type === 1) {
+    const uris = [];
+    for (const uri of (op.uris || [])) {
+      if (uri) {
+        uris.push({
+          uri: await enc(uri),
+          match: null,
+        });
+      }
+    }
+    payload.login = {
+      username: await enc(op.username),
+      password: await enc(op.password),
+      totp: await enc(op.totp),
+      uris,
+    };
+  }
+
+  // Custom fields
+  if (op.fields && op.fields.length > 0) {
+    payload.fields = [];
+    for (const f of op.fields) {
+      payload.fields.push({
+        name: await enc(f.name),
+        value: await enc(f.value),
+        type: f.type ?? 0,
+      });
+    }
+  }
+
+  // Password history (raw encrypted, pass-through — already encrypted)
+  if (op.passwordHistory && op.passwordHistory.length > 0) {
+    payload.passwordHistory = op.passwordHistory.map(h => ({
+      password: h.Password || h.password,
+      lastUsedDate: h.LastUsedDate || h.lastUsedDate,
+    }));
+  }
+
+  return payload;
 }
 
 /**
@@ -3442,21 +3522,12 @@ async function handleSingleMerge(groups, gi, btnEl) {
   try {
     const operations = buildMergeOperations([mergeGroup]);
 
-    // === DEBUG: Log single merge operations ===
-    console.group('[SingleMerge DEBUG] buildMergeOperations result');
+    // === DEBUG ===
+    console.group('[SingleMerge] buildMergeOperations result');
+    console.log('toCreate count:', operations.toCreate?.length || 0);
     console.log('toUpdate count:', operations.toUpdate.length);
     console.log('toDelete count:', operations.toDelete.length);
     console.log('errors:', operations.errors);
-    operations.toUpdate.forEach((op, i) => {
-      console.group(`  toUpdate[${i}]: id=${op.id}`);
-      console.log('titleOverride:', op.titleOverride);
-      console.log('notesAppend:', op.notesAppend);
-      console.log('data keys:', Object.keys(op.data));
-      console.log('data.Type:', op.data.Type, 'data.type:', op.data.type);
-      console.log('data sample:', JSON.stringify(op.data).substring(0, 800));
-      console.groupEnd();
-    });
-    console.log('toDelete IDs:', operations.toDelete);
     console.groupEnd();
 
     if (operations.errors && operations.errors.length > 0) {
@@ -3465,11 +3536,26 @@ async function handleSingleMerge(groups, gi, btnEl) {
       });
     }
 
-    // Execute updates
+    // === Path B: Create new merged item ===
+    let createSuccess = true;
+    for (const op of (operations.toCreate || [])) {
+      try {
+        const payload = await buildCipherCreatePayload(op, isDemoMode, symmetricKey);
+        console.log('[SingleMerge] Path B createCipher:', op.groupLabel);
+        const result = await client.createCipher(payload);
+        const newId = result.id || result.Id;
+        if (!newId) throw new Error('创建成功但未返回ID');
+        console.log('[SingleMerge] createCipher SUCCESS, new id:', newId);
+      } catch (err) {
+        console.error('[SingleMerge] createCipher failed:', err);
+        createSuccess = false;
+        showToast(`❌ 新建合并条目失败: ${err.message}`, 'error');
+      }
+    }
+
+    // === Path C: Update passkey item ===
     let updateFails = 0;
-    const failedKeepIds = new Set();
-    for (let idx = 0; idx < operations.toUpdate.length; idx++) {
-      const op = operations.toUpdate[idx];
+    for (const op of operations.toUpdate) {
       try {
         if (op.titleOverride) {
           if (isDemoMode) {
@@ -3500,47 +3586,28 @@ async function handleSingleMerge(groups, gi, btnEl) {
             if (op.data.notes !== undefined) op.data.notes = encNotes;
           }
         }
-
-        // URI optimization: re-encrypt simplified URIs
-        if (op.uriOptimizations && !isDemoMode) {
-          const login = op.data.Login || op.data.login;
-          if (login) {
-            const uris = login.Uris || login.uris || [];
-            for (const opt of op.uriOptimizations) {
-              if (uris[opt.index]) {
-                const encUri = await encryptString(opt.optimizedUri, symmetricKey);
-                if (uris[opt.index].Uri !== undefined) uris[opt.index].Uri = encUri;
-                if (uris[opt.index].uri !== undefined) uris[opt.index].uri = encUri;
-                if (uris[opt.index].UriChecksum !== undefined) uris[opt.index].UriChecksum = null;
-                if (uris[opt.index].uriChecksum !== undefined) uris[opt.index].uriChecksum = null;
-              }
-            }
-          }
-        }
-
-        console.log(`[SingleMerge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
-        const updateResult = await client.updateCipher(op.id, op.data);
-        console.log(`[SingleMerge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));
+        await client.updateCipher(op.id, op.data);
       } catch (err) {
-        console.error(`[SingleMerge] updateCipher ${op.id} failed:`, err);
+        console.error('[SingleMerge] updateCipher failed:', err);
         updateFails++;
-        failedKeepIds.add(op.id);
-        showToast(`⚠️ 合并更新失败 (${err.message})`, 'warning');
+        showToast(`⚠️ 通行密钥条目更新失败 (${err.message})`, 'warning');
       }
     }
 
-    // Execute deletes — ALWAYS proceed even if update failed
-    // When update fails, keepItem stays as-is, but duplicates should still be removed
-    const safeToDelete = operations.toDelete;
+    // === Delete: only if Path B succeeded (Path C failures still allow delete) ===
+    let safeToDelete = operations.toDelete;
+    if (!createSuccess && (operations.toCreate?.length || 0) > 0) {
+      // Path B failed — do NOT delete originals
+      safeToDelete = [];
+      showToast('⛔ 新建失败，原条目未删除', 'error');
+    }
     if (safeToDelete.length > 0) {
-      console.log(`[SingleMerge DEBUG] calling softDeleteBulk, count: ${safeToDelete.length}, IDs:`, safeToDelete);
       for (let i = 0; i < safeToDelete.length; i += 100) {
         await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
       }
-      console.log('[SingleMerge DEBUG] softDeleteBulk completed');
     }
 
-    // Optimistic UI update — remove deleted items from memory and re-render
+    // Optimistic UI update
     const deleteSet = new Set(safeToDelete);
     allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
     analysisResult = analyzeCiphers(allDecryptedCiphers);
@@ -3549,7 +3616,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
     renderFolderList();
     switchView(currentView);
 
-    if (updateFails === 0) {
+    if (createSuccess && updateFails === 0) {
       showToast(`✅ ${escHtml(group.label)} 合并完成`, 'success');
     } else {
       showToast(`⚠️ ${escHtml(group.label)} 重复项已删除，但部分数据未合并（条目不可编辑）`, 'warning');
