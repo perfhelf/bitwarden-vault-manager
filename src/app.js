@@ -28,6 +28,8 @@ let sortId = 'name-asc';
 let selectedItems = new Set();
 let isDemoMode = false;
 let isMergeLocked = false; // Lock to prevent concurrent merge operations
+let deadUrlItems = []; // Items whose URLs failed liveness check
+let deadUrlCheckDone = false; // Whether the check has completed
 
 // --- DOM ---
 const $ = (sel) => document.querySelector(sel);
@@ -352,6 +354,9 @@ function enterDashboard() {
   updateSidebarBadges();
   renderFolderList();
   switchView('overview');
+
+  // Start async URL liveness check in the background
+  checkDeadUrls();
 }
 
 /**
@@ -412,6 +417,16 @@ function updateSidebarBadges() {
   const corruptedCount = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name).length;
   const corruptedBadge = $('#badge-corrupted');
   if (corruptedBadge) corruptedBadge.textContent = corruptedCount > 0 ? corruptedCount : '';
+  // Dead URL badge
+  const deadBadge = $('#badge-dead-urls');
+  if (deadBadge) {
+    if (deadUrlCheckDone) {
+      deadBadge.textContent = deadUrlItems.length > 0 ? deadUrlItems.length : '';
+      if (deadUrlItems.length > 0) deadBadge.classList.add('warn');
+    } else {
+      deadBadge.textContent = '…';
+    }
+  }
   // Special type badges
   const typeMap = { 'type-card': 3, 'type-identity': 4, 'type-note': 2, 'type-sshkey': 5 };
   for (const [viewName, typeId] of Object.entries(typeMap)) {
@@ -469,6 +484,7 @@ function switchView(view) {
     case 'credfile': renderCredFileView(); break;
     case 'trash': renderTrashView(); break;
     case 'corrupted': renderCorruptedView(); break;
+    case 'dead-urls': renderDeadUrlsView(); break;
     case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
     case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
     case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
@@ -496,6 +512,7 @@ function setupSearch() {
         case 'trash': renderTrashView(); break;
         case 'corrupted': renderCorruptedView(); break;
         case 'health': renderHealthView(); break;
+        case 'dead-urls': renderDeadUrlsView(); break;
         case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
         case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
         case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
@@ -2817,6 +2834,189 @@ function renderCorruptedView() {
   container.querySelectorAll('.orphan-item').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.item-cb')) return;
+      const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
+      if (cipher) openDetailDrawer(cipher);
+    });
+  });
+}
+
+// ========================
+// URL LIVENESS CHECK
+// ========================
+/**
+ * Check all vault item URLs for liveness.
+ * Uses fetch with no-cors to detect truly dead domains (DNS failure / connection timeout).
+ * Runs in the background after vault load.
+ */
+async function checkDeadUrls() {
+  deadUrlItems = [];
+  deadUrlCheckDone = false;
+  updateSidebarBadges();
+
+  // Collect items with web URLs
+  const itemsWithUrls = allDecryptedCiphers.filter(c => {
+    const uri = c.decrypted?.uris?.filter(Boolean)?.[0];
+    return uri && /^https?:\/\//i.test(uri);
+  });
+
+  if (itemsWithUrls.length === 0) {
+    deadUrlCheckDone = true;
+    updateSidebarBadges();
+    return;
+  }
+
+  // Deduplicate by domain to minimize requests
+  const domainMap = new Map(); // domain -> [items]
+  for (const item of itemsWithUrls) {
+    const uri = item.decrypted.uris[0];
+    try {
+      const u = new URL(uri);
+      const domain = u.hostname.toLowerCase();
+      if (!domainMap.has(domain)) domainMap.set(domain, []);
+      domainMap.get(domain).push(item);
+    } catch {
+      // invalid URL — treat as dead
+      deadUrlItems.push(item);
+    }
+  }
+
+  // Check each unique domain with concurrency limit
+  const CONCURRENCY = 10;
+  const TIMEOUT_MS = 6000;
+  const domains = Array.from(domainMap.keys());
+  const deadDomains = new Set();
+
+  for (let i = 0; i < domains.length; i += CONCURRENCY) {
+    const batch = domains.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (domain) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        try {
+          await fetch(`https://${domain}`, {
+            method: 'HEAD',
+            mode: 'no-cors',
+            signal: controller.signal,
+          });
+          // If we get here (even opaque response), domain is alive
+        } catch {
+          // Network error or timeout => domain is dead
+          deadDomains.add(domain);
+        } finally {
+          clearTimeout(timer);
+        }
+      })
+    );
+  }
+
+  // Collect all items whose domain is dead
+  for (const [domain, items] of domainMap) {
+    if (deadDomains.has(domain)) {
+      deadUrlItems.push(...items);
+    }
+  }
+
+  deadUrlCheckDone = true;
+  updateSidebarBadges();
+
+  // Auto-refresh if user is on this view
+  if (currentView === 'dead-urls') {
+    renderDeadUrlsView();
+  }
+}
+
+// ========================
+// RENDER: DEAD URLS VIEW
+// ========================
+function renderDeadUrlsView() {
+  const container = $('#view-dead-urls');
+
+  if (!deadUrlCheckDone) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:2rem;margin-bottom:12px">🔍</div>
+        <div>正在检测 URL 连通性…</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-top:8px">
+          系统正在后台逐一检测所有条目的链接，请稍候。
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (deadUrlItems.length === 0) {
+    container.innerHTML = '<div class="empty-state">✅ 所有 URL 均可正常访问</div>';
+    return;
+  }
+
+  let filtered = deadUrlItems;
+  if (searchQuery.trim()) {
+    filtered = deadUrlItems.filter(matchesSearch);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的失效条目</div>';
+    return;
+  }
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selectedItems.has(c.id));
+
+  container.innerHTML = `
+    <div class="section-header">
+      <span class="section-title">
+        <label class="select-all-label">
+          <input type="checkbox" id="deadurl-select-all-cb" ${allSelected ? 'checked' : ''} />
+          ${t('select.all')}
+        </label>
+        🔗 URL 已失效 · ${filtered.length} 项
+      </span>
+    </div>
+    <div style="padding:4px 16px 12px;font-size:0.82rem;color:var(--text-secondary)">
+      以下条目的 URL 无法访问（DNS 解析失败或连接超时）。建议确认后移入回收站或更新链接。
+    </div>
+    ${filtered.map(item => {
+      const checked = selectedItems.has(item.id) ? 'checked' : '';
+      const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
+      return `
+      <div class="orphan-item selectable" data-id="${item.id}">
+        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
+        <div class="item-info">
+          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-meta">
+            <span class="orphan-tag" style="color:var(--danger)">⚠️ 无法访问</span>
+            <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
+            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : ''}
+            <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // Checkbox events
+  container.querySelectorAll('.item-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedItems.add(cb.dataset.id);
+      else selectedItems.delete(cb.dataset.id);
+      updateBatchBar();
+    });
+  });
+
+  // Select all
+  $('#deadurl-select-all-cb')?.addEventListener('change', (e) => {
+    filtered.forEach(c => {
+      if (e.target.checked) selectedItems.add(c.id);
+      else selectedItems.delete(c.id);
+    });
+    updateBatchBar();
+    renderDeadUrlsView();
+  });
+
+  // Click row to open detail
+  container.querySelectorAll('.orphan-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.item-cb')) return;
+      if (e.target.closest('.uri-link')) return; // Don't open detail when clicking URI link
       const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
       if (cipher) openDetailDrawer(cipher);
     });
