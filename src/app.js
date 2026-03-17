@@ -2678,6 +2678,22 @@ async function handleMerge(groups) {
         continue;
       }
 
+      // Safety guard: skip sub-groups where passkeys differ
+      const itemsWithPk = sorted.filter(i => {
+        const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
+        return fido.length > 0;
+      });
+      if (itemsWithPk.length > 0) {
+        const pkIds = itemsWithPk.map(i => {
+          const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
+          return fido.map(f => f.CredentialId || f.credentialId || '').sort().join('|');
+        });
+        if (new Set(pkIds).size > 1) {
+          showToast(`🔑 ${username || '—'} @ ${group.matchKey}：通行密钥不同，请检查`, 'warning');
+          continue;
+        }
+      }
+
       siteMergeGroups.push({
         type: 'same_site',
         label: `同站合并: ${username || '—'} @ ${group.matchKey}`,
@@ -2900,6 +2916,24 @@ async function handleSingleMerge(groups, gi, btnEl) {
     const passwords = new Set(group.items.map(i => i.decrypted?.password || ''));
     if (passwords.size > 1) {
       showToast('⚠️ 条目密码不同，请检查', 'warning');
+      return;
+    }
+  }
+
+  // === Safety guard: block merging items with different passkeys ===
+  const itemsWithPasskeys = group.items.filter(i => {
+    const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
+    return fido.length > 0;
+  });
+  if (itemsWithPasskeys.length > 0) {
+    // Check if passkeys are identical across all items that have them
+    const passkeyIds = itemsWithPasskeys.map(i => {
+      const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
+      return fido.map(f => f.CredentialId || f.credentialId || '').sort().join('|');
+    });
+    const uniquePasskeys = new Set(passkeyIds);
+    if (uniquePasskeys.size > 1) {
+      showToast('🔑 通行密钥不同，请检查', 'warning');
       return;
     }
   }

@@ -213,14 +213,31 @@ export class BitwardenClient {
    * Update a cipher (for merging passkeys)
    */
   async updateCipher(id, cipherData) {
+    // Sanitize payload: remove response-only fields that cause 400 errors
+    const payload = { ...cipherData };
+    const removeKeys = [
+      'permissions', 'edit', 'viewPassword', 'archivedDate',
+      'data',  // stringified inner JSON, conflicts with top-level fields
+      'collectionIds', 'deletedDate', 'object', 'attachments',
+      'passwordHistory', 'revisionDate', 'creationDate',
+    ];
+    for (const key of removeKeys) {
+      delete payload[key];
+      // Also handle camelCase/PascalCase variants
+      const pascal = key.charAt(0).toUpperCase() + key.slice(1);
+      delete payload[pascal];
+    }
+    // Ensure 'id' is not sent in body (it's in the URL)
+    delete payload.id;
+
     const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cipherData),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(`Update cipher failed: ${res.status} - ${err.Message || ''}`);
+      throw new Error(`Update cipher failed: ${res.status} - ${err.Message || JSON.stringify(err)}`);
     }
     return res.json();
   }
