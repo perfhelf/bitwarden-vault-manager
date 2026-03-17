@@ -2917,12 +2917,23 @@ async function checkDeadUrls() {
       img.src = `https://${domain}/favicon.ico?_t=${Date.now()}`;
     });
 
+    // Strategy 3: <link> resource probe (extra path for edge cases)
+    const linkProbe = new Promise((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      const timer = setTimeout(() => { link.remove(); reject(new Error('link timeout')); }, TIMEOUT);
+      link.onload = () => { clearTimeout(timer); link.remove(); resolve(true); };
+      link.onerror = () => { clearTimeout(timer); link.remove(); reject(new Error('link error')); };
+      link.href = `https://${domain}/favicon.ico?_t=${Date.now()}`;
+      document.head.appendChild(link);
+    });
+
     // Race: any strategy succeeding = domain is alive
     try {
-      await Promise.any([fetchProbe, imgProbe]);
+      await Promise.any([fetchProbe, imgProbe, linkProbe]);
       return true;
     } catch {
-      return false; // all strategies failed = truly dead
+      return false; // all 3 strategies failed = truly dead
     }
   }
 
