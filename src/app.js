@@ -3140,20 +3140,18 @@ function renderDeadUrlsView() {
     container.innerHTML = `
       <div class="empty-state">
         <div style="font-size:2.5rem;margin-bottom:16px">🔗</div>
-        <div style="font-size:1.05rem;margin-bottom:6px">URL 连通性检测</div>
-        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:20px;max-width:320px">
+        <div style="font-size:1.05rem;font-weight:600;margin-bottom:8px;color:var(--text-primary)">URL 连通性检测</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto;line-height:1.6">
           扫描所有登录条目的 URL，找出已失效的站点。<br>白名单域名将自动跳过。
         </div>
-        <button id="start-dead-url-check-btn" style="
-          padding:10px 28px;border:none;border-radius:8px;cursor:pointer;
-          background:linear-gradient(135deg,var(--primary),#a855f7);color:#fff;
-          font-size:0.95rem;font-weight:600;transition:all 0.2s ease;
-          box-shadow:0 2px 8px rgba(0,0,0,0.15);
+        <button id="start-dead-url-check-btn" class="btn-primary" style="
+          width:auto;padding:12px 32px;border-radius:var(--radius-sm);
+          font-size:0.95rem;letter-spacing:0.02em;
         ">🚀 开始检测</button>
       </div>`;
     container.querySelector('#start-dead-url-check-btn')?.addEventListener('click', () => {
       checkDeadUrls();
-      renderDeadUrlsView(); // immediately show progress
+      renderDeadUrlsView();
     });
     return;
   }
@@ -3166,7 +3164,7 @@ function renderDeadUrlsView() {
         <div style="font-size:2rem;margin-bottom:12px">🔍</div>
         <div>正在检测 URL 连通性…</div>
         <div style="width:260px;height:8px;background:var(--bg-secondary);border-radius:4px;margin:16px auto 8px;overflow:hidden">
-          <div id="dead-url-progress-fill" style="height:100%;background:linear-gradient(90deg,var(--primary),#a855f7);border-radius:4px;transition:width 0.3s ease;width:${pct}%"></div>
+          <div id="dead-url-progress-fill" style="height:100%;background:linear-gradient(90deg,var(--brand),var(--brand-light));border-radius:4px;transition:width 0.3s ease;width:${pct}%"></div>
         </div>
         <div id="dead-url-progress-label" style="font-size:0.82rem;color:var(--text-secondary)">
           ${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} 个域名
