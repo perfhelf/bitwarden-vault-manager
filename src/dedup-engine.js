@@ -574,7 +574,9 @@ function collectPasswordHistory(allItems) {
 function simplifyUrl(url) {
   try {
     const u = new URL(url);
-    return u.origin;
+    // Strip common non-differentiating subdomains for a canonical origin
+    const cleanHost = u.hostname.replace(/^(www|m|mobile|touch|wap|lite)\./, '');
+    return `${u.protocol}//${cleanHost}`;
   } catch {
     return url;
   }
@@ -638,9 +640,9 @@ function normalizeUri(uri) {
       return appMatch[2].toLowerCase().split('/')[0].trim();
     }
     const u = new URL(uri.startsWith('http') ? uri : `https://${uri}`);
-    return u.hostname.replace(/^www\./, '').toLowerCase();
+    return u.hostname.replace(/^(www|m|mobile|touch|wap|lite)\./, '').toLowerCase();
   } catch {
-    return uri.toLowerCase().replace(/^www\./, '').trim();
+    return uri.toLowerCase().replace(/^(www|m|mobile|touch|wap|lite)\./, '').trim();
   }
 }
 
