@@ -1938,10 +1938,17 @@ function renderDuplicatesView() {
     return;
   }
 
+  // Track filtered group indices for select all / deselect all
+  const filteredExactIndices = new Set(filteredExactGroups.map(g => groups.indexOf(g)));
+
+  const exactCountLabel = searchQuery.trim()
+    ? `${filteredExactGroups.length}/${exactGroups.length}`
+    : `${exactGroups.length}`;
+
   container.innerHTML = `
     ${filteredExactGroups.length > 0 ? `
       <div class="section-header">
-        <span class="section-title">${t('dup.exact')} · ${exactGroups.length} ${t('dup.groups')}</span>
+        <span class="section-title">${t('dup.exact')} · ${exactCountLabel} ${t('dup.groups')}</span>
         <div class="section-header-actions">
           <button class="section-action-btn" id="dup-select-all">${t('dup.select.all')}</button>
           <button class="section-action-btn" id="dup-deselect-all">${t('dup.deselect.all')}</button>
@@ -1954,7 +1961,7 @@ function renderDuplicatesView() {
         <div class="dup-group" data-group-index="${globalIdx}">
           <div class="dup-group-header">
             <label class="group-checkbox">
-              <input type="checkbox" class="group-select" data-gi="${globalIdx}" checked>
+              <input type="checkbox" class="group-select" data-gi="${globalIdx}" data-filtered="true" checked>
               <span class="badge badge-exact">${t('dup.exact')}</span>
               ${group.pureDelete
                 ? `<span class="badge badge-pure-delete">${t('dup.candelete')}</span>`
@@ -1976,7 +1983,7 @@ function renderDuplicatesView() {
 
     ${filteredSameGroups.length > 0 ? `
       <div class="section-header" style="margin-top:24px">
-        <span class="section-title">${t('dup.samesite')} · ${filteredSameGroups.length} ${t('dup.groups')}</span>
+        <span class="section-title">${t('dup.samesite')} · ${searchQuery.trim() ? `${filteredSameGroups.length}/${sameGroups.length}` : filteredSameGroups.length} ${t('dup.groups')}</span>
         <span class="section-hint">${t('dup.samesite.hint')}</span>
       </div>
       ${filteredSameGroups.map((group) => {
@@ -2034,12 +2041,14 @@ function renderDuplicatesView() {
   });
 
   // Select All / Deselect All buttons
+  // Select All — only targets filtered (visible) groups
   $('#dup-select-all')?.addEventListener('click', () => {
-    container.querySelectorAll('.group-select').forEach(cb => { cb.checked = true; });
+    container.querySelectorAll('.group-select[data-filtered="true"]').forEach(cb => { cb.checked = true; });
     updateMergeCount();
   });
+  // Deselect All (反选) — only toggles filtered (visible) groups
   $('#dup-deselect-all')?.addEventListener('click', () => {
-    container.querySelectorAll('.group-select').forEach(cb => { cb.checked = !cb.checked; });
+    container.querySelectorAll('.group-select[data-filtered="true"]').forEach(cb => { cb.checked = !cb.checked; });
     updateMergeCount();
   });
 
