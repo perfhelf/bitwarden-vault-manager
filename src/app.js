@@ -449,6 +449,9 @@ function setupSidebarNav() {
 }
 
 function switchView(view) {
+  if (currentView === 'dead-urls' && view !== 'dead-urls') {
+    console.warn('[switchView] JUMPING AWAY from dead-urls to:', view, new Error().stack);
+  }
   currentView = view;
 
   // Update nav active states
