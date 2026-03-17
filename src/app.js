@@ -1610,7 +1610,18 @@ async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5) {
     }
   }
   console.warn(`Field decrypt failed after ${maxRetries} retries:`, lastErr?.message);
-  return null; // Return null instead of throwing
+  return { __decryptFailed: true, error: lastErr?.message || 'Unknown error' };
+}
+
+/** Extract usable value from decryptFieldWithRetry result; null if failed */
+function fieldValue(result) {
+  if (result && typeof result === 'object' && result.__decryptFailed) return null;
+  return result;
+}
+
+/** Check if a decrypt result is a failure marker */
+function fieldFailed(result) {
+  return result && typeof result === 'object' && result.__decryptFailed === true;
 }
 
 async function decryptAllCiphers(syncData) {
@@ -1619,17 +1630,22 @@ async function decryptAllCiphers(syncData) {
   let failCount = 0;
 
   for (const cipher of ciphers) {
+    const decryptErrors = []; // Track which fields failed
+
     // Decrypt each field independently — partial success is OK
-    const name = await decryptFieldWithRetry(cipher.Name, symmetricKey);
-    const notes = await decryptFieldWithRetry(cipher.Notes, symmetricKey);
+    const rawName = await decryptFieldWithRetry(cipher.Name, symmetricKey);
+    const rawNotes = await decryptFieldWithRetry(cipher.Notes, symmetricKey);
+
+    if (fieldFailed(rawName)) decryptErrors.push('name');
+    if (fieldFailed(rawNotes)) decryptErrors.push('notes');
 
     const item = {
       id: cipher.Id,
       type: cipher.Type,
       raw: cipher,
       decrypted: {
-        name,
-        notes,
+        name: fieldValue(rawName),
+        notes: fieldValue(rawNotes),
         favorite: cipher.Favorite || false,
         reprompt: cipher.Reprompt || 0,
         organizationId: cipher.OrganizationId,
@@ -1639,16 +1655,25 @@ async function decryptAllCiphers(syncData) {
 
     // Login type
     if (cipher.Type === 1 && cipher.Login) {
-      item.decrypted.username = await decryptFieldWithRetry(cipher.Login.Username, symmetricKey);
-      item.decrypted.password = await decryptFieldWithRetry(cipher.Login.Password, symmetricKey);
-      item.decrypted.totp = await decryptFieldWithRetry(cipher.Login.Totp, symmetricKey);
+      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, symmetricKey);
+      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, symmetricKey);
+      const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, symmetricKey);
+
+      if (fieldFailed(rawUsername)) decryptErrors.push('username');
+      if (fieldFailed(rawPassword)) decryptErrors.push('password');
+      if (fieldFailed(rawTotp)) decryptErrors.push('totp');
+
+      item.decrypted.username = fieldValue(rawUsername);
+      item.decrypted.password = fieldValue(rawPassword);
+      item.decrypted.totp = fieldValue(rawTotp);
       item.decrypted.passwordRevisionDate = cipher.Login.PasswordRevisionDate;
 
       if (cipher.Login.Uris) {
         item.decrypted.uris = [];
         for (const u of cipher.Login.Uris) {
-          const uri = await decryptFieldWithRetry(u.Uri, symmetricKey);
-          item.decrypted.uris.push(uri);
+          const rawUri = await decryptFieldWithRetry(u.Uri, symmetricKey);
+          if (fieldFailed(rawUri)) decryptErrors.push('uri');
+          item.decrypted.uris.push(fieldValue(rawUri));
         }
       }
     }
@@ -1656,7 +1681,7 @@ async function decryptAllCiphers(syncData) {
     // Card type
     if (cipher.Type === 3 && cipher.Card) {
       const card = cipher.Card;
-      item.decrypted.card = {
+      const rawCard = {
         cardholderName: await decryptFieldWithRetry(card.CardholderName || card.cardholderName, symmetricKey),
         number: await decryptFieldWithRetry(card.Number || card.number, symmetricKey),
         expMonth: await decryptFieldWithRetry(card.ExpMonth || card.expMonth, symmetricKey),
@@ -1664,6 +1689,13 @@ async function decryptAllCiphers(syncData) {
         code: await decryptFieldWithRetry(card.Code || card.code, symmetricKey),
         brand: await decryptFieldWithRetry(card.Brand || card.brand, symmetricKey),
       };
+      for (const [k, v] of Object.entries(rawCard)) {
+        if (fieldFailed(v)) decryptErrors.push(`card.${k}`);
+      }
+      item.decrypted.card = {};
+      for (const [k, v] of Object.entries(rawCard)) {
+        item.decrypted.card[k] = fieldValue(v);
+      }
     }
 
     // Identity type
@@ -1678,7 +1710,9 @@ async function decryptAllCiphers(syncData) {
       ];
       for (const field of identityFields) {
         const key = field.charAt(0).toLowerCase() + field.slice(1);
-        item.decrypted.identity[key] = await decryptFieldWithRetry(id[field] || id[key], symmetricKey);
+        const rawVal = await decryptFieldWithRetry(id[field] || id[key], symmetricKey);
+        if (fieldFailed(rawVal)) decryptErrors.push(`identity.${key}`);
+        item.decrypted.identity[key] = fieldValue(rawVal);
       }
     }
 
@@ -1686,21 +1720,19 @@ async function decryptAllCiphers(syncData) {
     if (cipher.Fields && cipher.Fields.length > 0) {
       item.decrypted.fields = [];
       for (const f of cipher.Fields) {
-        const fieldName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey);
-        const fieldValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey);
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey);
+        if (fieldFailed(rawFName)) decryptErrors.push('field.name');
+        if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
         const fieldType = f.Type ?? f.type ?? 0; // 0=text, 1=hidden, 2=boolean, 3=linked
-        item.decrypted.fields.push({ name: fieldName, value: fieldValue, type: fieldType });
+        item.decrypted.fields.push({ name: fieldValue(rawFName), value: fieldValue(rawFValue), type: fieldType });
       }
     }
 
-    // Check if this is a completely failed item (no usable data at all)
-    const hasAnyData = item.decrypted.name || item.decrypted.username ||
-      item.decrypted.password || item.decrypted.notes ||
-      (item.decrypted.uris && item.decrypted.uris.some(Boolean));
-
-    if (!hasAnyData) {
-      // Total failure — mark it but still include the item
-      item.decrypted.error = 'All fields failed to decrypt';
+    // Mark items with ANY decrypt failures
+    if (decryptErrors.length > 0) {
+      item.decrypted.decryptErrors = decryptErrors;
+      item.decrypted.error = `Fields failed: ${decryptErrors.join(', ')}`;
       failCount++;
     }
 
@@ -1708,7 +1740,7 @@ async function decryptAllCiphers(syncData) {
   }
 
   if (failCount > 0) {
-    console.warn(`${failCount}/${ciphers.length} items completely failed to decrypt`);
+    console.warn(`${failCount}/${ciphers.length} items had decrypt failures`);
   }
 
   return decrypted;
@@ -2381,7 +2413,13 @@ function renderCorruptedView() {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
       const hasError = item.decrypted?.error;
       const noName = !item.decrypted?.name;
-      const reason = hasError ? '🔐 解密失败' : '📛 无标题';
+      const reasons = [];
+      if (hasError) {
+        const errCount = item.decrypted?.decryptErrors?.length || 0;
+        reasons.push(`🔐 解密失败${errCount > 0 ? ` (${errCount}个字段)` : ''}`);
+      }
+      if (noName && !hasError) reasons.push('📛 无标题');
+      const reasonHtml = reasons.map(r => `<span class="orphan-tag" style="color:#f87171">${r}</span>`).join('');
       const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
       return `
       <div class="orphan-item selectable" data-id="${item.id}">
@@ -2389,7 +2427,7 @@ function renderCorruptedView() {
         <div class="item-info">
           <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
           <div class="item-meta">
-            <span class="orphan-tag" style="color:#f87171">${reason}</span>
+            ${reasonHtml}
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
             ${uri ? `<span>🔗 ${escHtml(uri)}</span>` : ''}
             <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
