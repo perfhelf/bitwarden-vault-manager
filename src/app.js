@@ -382,7 +382,7 @@ function enterDemoMode() {
     restoreBulk: async () => {},
     bulkMoveCiphersToFolder: async () => {},
     createFolder: async (name) => ({ Id: 'folder-' + Date.now(), Name: name }),
-    renameFolder: async () => {},
+    updateFolder: async () => {},
     deleteFolder: async () => {},
     createCipher: async (data) => ({ ...data, Id: 'cipher-' + Date.now() }),
     importCiphers: async () => {},
