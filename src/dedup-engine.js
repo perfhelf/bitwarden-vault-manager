@@ -422,6 +422,56 @@ export function buildMergeOperations(selectedGroups) {
       }
     }
 
+    // === 8. URI Domain Dedup: keep only shortest URL per domain ===
+    if (keepLogin) {
+      const currentUris = keepLogin.Uris || keepLogin.uris || [];
+      if (currentUris.length > 1) {
+        // Build encrypted→decrypted URI mapping from all group items
+        const encToDecMap = new Map();
+        for (const item of group.items) {
+          const decUris = item.decrypted?.uris || [];
+          const rawLogin = item.raw?._original?.Login || item.raw?._original?.login || item.raw?.Login || item.raw?.login || {};
+          const rawUris = rawLogin.Uris || rawLogin.uris || [];
+          for (let k = 0; k < Math.min(decUris.length, rawUris.length); k++) {
+            const encVal = rawUris[k]?.Uri || rawUris[k]?.uri || '';
+            const decVal = decUris[k] || '';
+            if (encVal && decVal) encToDecMap.set(encVal, decVal);
+          }
+        }
+
+        // Group URIs by origin (protocol + host)
+        const getOrigin = (url) => {
+          try { return new URL(url).origin; } catch { return url; }
+        };
+
+        const byOrigin = new Map(); // origin → [{encUri, decUri, uriObj, len}]
+        for (const uriObj of currentUris) {
+          const encVal = uriObj.Uri || uriObj.uri || '';
+          const decVal = encToDecMap.get(encVal) || '';
+          const origin = decVal ? getOrigin(decVal) : encVal;
+          if (!byOrigin.has(origin)) byOrigin.set(origin, []);
+          byOrigin.get(origin).push({ uriObj, decVal, len: decVal.length || 999 });
+        }
+
+        // For each origin with multiple URIs, keep only the shortest
+        const deduped = [];
+        for (const [, entries] of byOrigin) {
+          if (entries.length > 1) {
+            entries.sort((a, b) => a.len - b.len);
+            deduped.push(entries[0].uriObj); // keep shortest
+            needsUpdate = true;
+          } else {
+            deduped.push(entries[0].uriObj);
+          }
+        }
+
+        if (deduped.length < currentUris.length) {
+          if (keepLogin.Uris !== undefined) keepLogin.Uris = deduped;
+          if (keepLogin.uris !== undefined) keepLogin.uris = deduped;
+        }
+      }
+    }
+
     if (needsUpdate) {
       if (keepLogin) {
         updatedCipher.Login = keepLogin;
