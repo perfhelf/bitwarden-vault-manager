@@ -329,10 +329,12 @@ function setLoginState(state, message) {
 // DASHBOARD ENTRY
 // ========================
 function enterDashboard() {
-  // ── Idempotency guard: if dashboard already showing, don't reset view ──
+  // ── Idempotency guard: if dashboard already showing, don't re-init ──
   const dashEl = $('#dashboard-view');
   if (dashEl.style.display === 'block') {
-    console.log('[enterDashboard] Already active, skipping re-init');
+    // Data may have changed (e.g. second decrypt finished) — refresh badges
+    updateSidebarBadges();
+    renderFolderList();
     return;
   }
 
