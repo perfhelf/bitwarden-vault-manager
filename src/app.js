@@ -3249,6 +3249,7 @@ async function checkDeadUrls() {
   updateSidebarBadges();
 
   const itemsWithUrls = allDecryptedCiphers.filter(c => {
+    if (c.type !== 1) return false; // Only check Login items
     const uri = c.decrypted?.uris?.filter(Boolean)?.[0];
     return uri && /^https?:\/\//i.test(uri);
   });
