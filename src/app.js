@@ -602,34 +602,37 @@ function setupBatchOps() {
       t('batch.delete.title'),
       `${t('modal.confirm')} ${selectedItems.size} ${t('batch.delete.msg')}`,
       async () => {
+        const ids = Array.from(selectedItems);
+        const deleteSet = new Set(ids);
+        const count = ids.length;
+
+        // ── Phase 1: 乐观热更新 ── 立即从 UI 移除 ──
+        allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+        deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
+        analysisResult = analyzeCiphers(allDecryptedCiphers);
+        healthResult = analyzeHealth(allDecryptedCiphers);
+        selectedItems.clear();
+        updateBatchBar();
+        updateSidebarBadges();
+        // Force immediate re-render of current view
+        switchView(currentView);
+        showToast(`✅ ${count} ${t('dup.items')} ${t('detail.delete.trash')}`, 'success');
+
+        // ── Phase 2: 后台服务端删除 ──
         try {
-          const ids = Array.from(selectedItems);
-          const deleteSet = new Set(ids);
-
-          // Optimistic UI update — instantly remove from in-memory data
-          allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
-          deadUrlItems = deadUrlItems.filter(c => !deleteSet.has(c.id));
-          analysisResult = analyzeCiphers(allDecryptedCiphers);
-          healthResult = analyzeHealth(allDecryptedCiphers);
-          selectedItems.clear();
-          updateBatchBar();
-          updateSidebarBadges();
-          switchView(currentView);
-
-          showToast(`✅ ${ids.length} ${t('dup.items')} ${t('detail.delete.trash')}`, 'success');
-
-          // Server-side delete (background)
           for (let i = 0; i < ids.length; i += 100) {
-            const batch = ids.slice(i, i + 100);
-            await client.softDeleteBulk(batch);
+            await client.softDeleteBulk(ids.slice(i, i + 100));
           }
-          // Background resync to ensure consistency
-          resyncVault();
         } catch (err) {
-          showToast(`❌ ${t('detail.delete.fail')}: ${err.message}`, 'error');
-          // Rollback: re-sync from server
-          resyncVault();
+          console.error('[Delete] Server-side softDeleteBulk failed:', err);
+          showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+          // Rollback: re-sync from server to restore real state
+          await resyncVault();
+          return;
         }
+
+        // ── Phase 3: 后台静默 resync 保持一致性 ──
+        resyncVault();
       }
     );
   });
