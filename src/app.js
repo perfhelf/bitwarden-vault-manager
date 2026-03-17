@@ -2745,17 +2745,26 @@ async function handleMerge(groups) {
         continue;
       }
 
-      // Safety guard: skip sub-groups where passkeys differ
+      // Safety guard: skip sub-groups where passkeys differ (decrypt before comparing)
       const itemsWithPk = sorted.filter(i => {
         const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
         return fido.length > 0;
       });
       if (itemsWithPk.length > 0) {
-        const pkIds = itemsWithPk.map(i => {
-          const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
-          return fido.map(f => f.CredentialId || f.credentialId || '').sort().join('|');
-        });
-        if (new Set(pkIds).size > 1) {
+        const decryptedPkIds = [];
+        for (const item of itemsWithPk) {
+          const fido = item.raw?.Login?.Fido2Credentials || item.raw?._original?.Login?.Fido2Credentials || [];
+          const ids = [];
+          for (const f of fido) {
+            const encId = f.CredentialId || f.credentialId || '';
+            try {
+              const plainId = encId ? await decryptToString(encId, symmetricKey) : '';
+              ids.push(plainId);
+            } catch { ids.push(encId); } // fallback to encrypted string
+          }
+          decryptedPkIds.push(ids.sort().join('|'));
+        }
+        if (new Set(decryptedPkIds).size > 1) {
           showToast(`🔑 ${username || '—'} @ ${group.matchKey}：通行密钥不同，请检查`, 'warning');
           continue;
         }
@@ -2985,19 +2994,26 @@ async function handleSingleMerge(groups, gi, btnEl) {
     }
   }
 
-  // === Safety guard: block merging items with different passkeys ===
+  // === Safety guard: block merging items with different passkeys (decrypt to compare) ===
   const itemsWithPasskeys = group.items.filter(i => {
     const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
     return fido.length > 0;
   });
   if (itemsWithPasskeys.length > 0) {
-    // Check if passkeys are identical across all items that have them
-    const passkeyIds = itemsWithPasskeys.map(i => {
-      const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
-      return fido.map(f => f.CredentialId || f.credentialId || '').sort().join('|');
-    });
-    const uniquePasskeys = new Set(passkeyIds);
-    if (uniquePasskeys.size > 1) {
+    const decryptedPasskeyIds = [];
+    for (const item of itemsWithPasskeys) {
+      const fido = item.raw?.Login?.Fido2Credentials || item.raw?._original?.Login?.Fido2Credentials || [];
+      const ids = [];
+      for (const f of fido) {
+        const encId = f.CredentialId || f.credentialId || '';
+        try {
+          const plainId = encId ? await decryptToString(encId, symmetricKey) : '';
+          ids.push(plainId);
+        } catch { ids.push(encId); }
+      }
+      decryptedPasskeyIds.push(ids.sort().join('|'));
+    }
+    if (new Set(decryptedPasskeyIds).size > 1) {
       showToast('🔑 通行密钥不同，请检查', 'warning');
       return;
     }
