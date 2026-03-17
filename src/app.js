@@ -364,9 +364,6 @@ function enterDashboard() {
   updateSidebarBadges();
   renderFolderList();
   switchView('overview');
-
-  // Start async URL liveness check in the background
-  checkDeadUrls();
 }
 
 /**
@@ -3138,7 +3135,31 @@ async function checkDeadUrls() {
 function renderDeadUrlsView() {
   const container = $('#view-dead-urls');
 
-  if (!deadUrlCheckDone) {
+  // ── Not started yet: show start button ──
+  if (!deadUrlCheckDone && !_deadUrlCheckRunning) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:2.5rem;margin-bottom:16px">🔗</div>
+        <div style="font-size:1.05rem;margin-bottom:6px">URL 连通性检测</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:20px;max-width:320px">
+          扫描所有登录条目的 URL，找出已失效的站点。<br>白名单域名将自动跳过。
+        </div>
+        <button id="start-dead-url-check-btn" style="
+          padding:10px 28px;border:none;border-radius:8px;cursor:pointer;
+          background:linear-gradient(135deg,var(--primary),#a855f7);color:#fff;
+          font-size:0.95rem;font-weight:600;transition:all 0.2s ease;
+          box-shadow:0 2px 8px rgba(0,0,0,0.15);
+        ">🚀 开始检测</button>
+      </div>`;
+    container.querySelector('#start-dead-url-check-btn')?.addEventListener('click', () => {
+      checkDeadUrls();
+      renderDeadUrlsView(); // immediately show progress
+    });
+    return;
+  }
+
+  // ── Running: show progress bar ──
+  if (!deadUrlCheckDone && _deadUrlCheckRunning) {
     const pct = deadUrlCheckProgress.total > 0 ? (deadUrlCheckProgress.checked / deadUrlCheckProgress.total * 100).toFixed(0) : 0;
     container.innerHTML = `
       <div class="empty-state">
