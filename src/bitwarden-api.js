@@ -224,20 +224,36 @@ export class BitwardenClient {
   async updateCipher(id, cipherData) {
     // Sanitize payload: remove response-only fields that cause 400 errors
     const payload = { ...cipherData };
+
+    // Ensure LastKnownRevisionDate is set (required by Bitwarden API)
+    if (!payload.LastKnownRevisionDate && !payload.lastKnownRevisionDate) {
+      payload.LastKnownRevisionDate = payload.RevisionDate || payload.revisionDate || new Date().toISOString();
+    }
+
     const removeKeys = [
-      'permissions', 'edit', 'viewPassword', 'archivedDate',
-      'data',  // stringified inner JSON, conflicts with top-level fields
-      'collectionIds', 'deletedDate', 'object', 'attachments',
-      'passwordHistory', 'revisionDate', 'creationDate',
+      // Response-only metadata
+      'id', 'Id',
+      'permissions', 'Permissions',
+      'edit', 'Edit',
+      'viewPassword', 'ViewPassword',
+      'archivedDate', 'ArchivedDate',
+      'object', 'Object',
+      'attachments', 'Attachments',
+      'passwordHistory', 'PasswordHistory',
+      'revisionDate', 'RevisionDate',
+      'creationDate', 'CreationDate',
+      'deletedDate', 'DeletedDate',
+      'collectionIds', 'CollectionIds',
+      'data', 'Data',
+      // Internal fields from our sync normalization
+      '_original',
+      // Other response-only fields
+      'sizeName', 'SizeName',
+      'externalId', 'ExternalId',
     ];
     for (const key of removeKeys) {
       delete payload[key];
-      // Also handle camelCase/PascalCase variants
-      const pascal = key.charAt(0).toUpperCase() + key.slice(1);
-      delete payload[pascal];
     }
-    // Ensure 'id' is not sent in body (it's in the URL)
-    delete payload.id;
 
     const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`, {
       method: 'PUT',
