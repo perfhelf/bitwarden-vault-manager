@@ -2682,6 +2682,11 @@ async function handleMerge(groups) {
     }
   }
 
+  // Notify if same-site items were selected but couldn't be grouped for merge
+  if (siteCheckedMap.size > 0 && siteMergeGroups.length === 0) {
+    showToast('⛔ 同站条目的用户名各不相同，无法合并', 'warning');
+  }
+
   const allGroups = [...exactSelectedGroups, ...siteMergeGroups];
   if (allGroups.length === 0) {
     showToast(t('dup.merge.select.hint'), 'warning');
@@ -2713,6 +2718,25 @@ async function handleMerge(groups) {
 
       try {
         const operations = buildMergeOperations(allGroups);
+
+        // === DEBUG: Log merge operations ===
+        console.group('[Merge DEBUG] buildMergeOperations result');
+        console.log('toUpdate count:', operations.toUpdate.length);
+        console.log('toDelete count:', operations.toDelete.length);
+        console.log('errors:', operations.errors);
+        operations.toUpdate.forEach((op, i) => {
+          console.group(`  toUpdate[${i}]: id=${op.id}`);
+          console.log('titleOverride:', op.titleOverride);
+          console.log('notesAppend:', op.notesAppend);
+          console.log('data keys:', Object.keys(op.data));
+          console.log('data.Type:', op.data.Type, 'data.type:', op.data.type);
+          console.log('data.Name (first 60):', String(op.data.Name || op.data.name || '').substring(0, 60));
+          console.log('data.Login keys:', op.data.Login ? Object.keys(op.data.Login) : op.data.login ? Object.keys(op.data.login) : 'no Login');
+          console.log('data sample:', JSON.stringify(op.data).substring(0, 500));
+          console.groupEnd();
+        });
+        console.log('toDelete IDs:', operations.toDelete);
+        console.groupEnd();
 
         // Show warnings from merge engine
         if (operations.errors && operations.errors.length > 0) {
@@ -2763,7 +2787,9 @@ async function handleMerge(groups) {
               }
             }
 
-            await client.updateCipher(op.id, op.data);
+            console.log(`[Merge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
+            const updateResult = await client.updateCipher(op.id, op.data);
+            console.log(`[Merge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));
           } catch (err) {
             console.error(`[Merge] updateCipher ${op.id} failed:`, err);
             updateFails++;
@@ -2785,9 +2811,11 @@ async function handleMerge(groups) {
         const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
         if (safeToDelete.length > 0) {
           mergeBtn.textContent = '清理中...';
+          console.log(`[Merge DEBUG] calling softDeleteBulk, count: ${safeToDelete.length}, IDs:`, safeToDelete);
           for (let i = 0; i < safeToDelete.length; i += 100) {
             await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
           }
+          console.log('[Merge DEBUG] softDeleteBulk completed');
         }
 
         const summary = [];
@@ -2836,6 +2864,15 @@ async function handleSingleMerge(groups, gi, btnEl) {
   const group = groups[gi];
   if (!group) return;
 
+  // === Safety guard: block merging same-site items with different usernames ===
+  if (group.type === 'same_site') {
+    const usernames = new Set(group.items.map(i => i.decrypted?.username || ''));
+    if (usernames.size > 1) {
+      showToast('⛔ 不同用户名的条目无法合并，以防止凭据丢失', 'warning');
+      return;
+    }
+  }
+
   const keepIndex = group.selectedKeepIndex || 0;
   const mergeGroup = { ...group, keepItem: group.items[keepIndex] };
 
@@ -2848,6 +2885,23 @@ async function handleSingleMerge(groups, gi, btnEl) {
 
   try {
     const operations = buildMergeOperations([mergeGroup]);
+
+    // === DEBUG: Log single merge operations ===
+    console.group('[SingleMerge DEBUG] buildMergeOperations result');
+    console.log('toUpdate count:', operations.toUpdate.length);
+    console.log('toDelete count:', operations.toDelete.length);
+    console.log('errors:', operations.errors);
+    operations.toUpdate.forEach((op, i) => {
+      console.group(`  toUpdate[${i}]: id=${op.id}`);
+      console.log('titleOverride:', op.titleOverride);
+      console.log('notesAppend:', op.notesAppend);
+      console.log('data keys:', Object.keys(op.data));
+      console.log('data.Type:', op.data.Type, 'data.type:', op.data.type);
+      console.log('data sample:', JSON.stringify(op.data).substring(0, 800));
+      console.groupEnd();
+    });
+    console.log('toDelete IDs:', operations.toDelete);
+    console.groupEnd();
 
     if (operations.errors && operations.errors.length > 0) {
       operations.errors.forEach(e => {
@@ -2890,7 +2944,9 @@ async function handleSingleMerge(groups, gi, btnEl) {
             if (op.data.notes !== undefined) op.data.notes = encNotes;
           }
         }
-        await client.updateCipher(op.id, op.data);
+        console.log(`[SingleMerge DEBUG] calling updateCipher(${op.id})`, JSON.stringify(op.data).substring(0, 800));
+        const updateResult = await client.updateCipher(op.id, op.data);
+        console.log(`[SingleMerge DEBUG] updateCipher SUCCESS for ${op.id}`, JSON.stringify(updateResult).substring(0, 300));
       } catch (err) {
         console.error(`[SingleMerge] updateCipher ${op.id} failed:`, err);
         updateFails++;
@@ -2906,9 +2962,11 @@ async function handleSingleMerge(groups, gi, btnEl) {
     }
     const safeToDelete = operations.toDelete.filter(id => !failedGroupDeleteIds.has(id));
     if (safeToDelete.length > 0) {
+      console.log(`[SingleMerge DEBUG] calling softDeleteBulk, count: ${safeToDelete.length}, IDs:`, safeToDelete);
       for (let i = 0; i < safeToDelete.length; i += 100) {
         await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
       }
+      console.log('[SingleMerge DEBUG] softDeleteBulk completed');
     }
 
     if (updateFails === 0) {
