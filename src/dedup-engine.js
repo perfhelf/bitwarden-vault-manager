@@ -632,6 +632,11 @@ function getPrimaryUri(cipher) {
 function normalizeUri(uri) {
   if (!uri) return '';
   try {
+    // Handle mobile app URIs: androidapp://com.example.app, iosapp://com.example.app
+    const appMatch = uri.match(/^(androidapp|iosapp):\/\/(.+)/i);
+    if (appMatch) {
+      return appMatch[2].toLowerCase().split('/')[0].trim();
+    }
     const u = new URL(uri.startsWith('http') ? uri : `https://${uri}`);
     return u.hostname.replace(/^www\./, '').toLowerCase();
   } catch {
