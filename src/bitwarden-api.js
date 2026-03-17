@@ -257,8 +257,6 @@ export class BitwardenClient {
       'permissions', 'Permissions',
       'archivedDate', 'ArchivedDate',
       'attachments', 'Attachments',
-      'passwordHistory', 'PasswordHistory',
-      'collectionIds', 'CollectionIds',
       'deletedDate', 'DeletedDate',
       'data', 'Data',
       'sizeName', 'SizeName',
