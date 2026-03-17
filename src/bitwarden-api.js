@@ -220,65 +220,108 @@ export class BitwardenClient {
 
   /**
    * Update a cipher (for merging passkeys)
+   * Uses GET-then-PUT approach: fetches the current cipher first to ensure
+   * all required fields (especially Key for per-cipher encryption) are present.
    */
   async updateCipher(id, cipherData) {
-    // Build a CLEAN payload with only the fields Bitwarden API accepts
-    // Using whitelist approach to avoid sending any response-only fields
     const src = cipherData;
 
-    const payload = {
-      Type: src.Type ?? src.type,
-      OrganizationId: src.OrganizationId || src.organizationId || null,
-      FolderId: src.FolderId || src.folderId || null,
-      Name: src.Name || src.name || null,
-      Notes: src.Notes || src.notes || null,
-      Favorite: src.Favorite ?? src.favorite ?? false,
-      Reprompt: src.Reprompt ?? src.reprompt ?? 0,
-      Fields: src.Fields || src.fields || [],
-      LastKnownRevisionDate: src.RevisionDate || src.revisionDate || src.LastKnownRevisionDate || new Date().toISOString(),
-    };
+    // Step 1: GET the current cipher from the API to get all required fields
+    let current = null;
+    try {
+      const getRes = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`);
+      if (getRes.ok) {
+        current = await getRes.json();
+        console.log(`[updateCipher] GET /ciphers/${id} OK, has key:`, !!(current.key || current.Key));
+      }
+    } catch (e) {
+      console.warn(`[updateCipher] GET /ciphers/${id} failed, using source data:`, e.message);
+    }
 
-    // Login-type fields
-    const login = src.Login || src.login;
-    if (login) {
+    // Step 2: Build payload starting from the current (fresh) data, overriding with our changes
+    const base = current || src;
+    const payload = {};
+
+    // Copy ALL fields from the fresh GET response (this includes Key, etc.)
+    if (current) {
+      Object.assign(payload, current);
+    }
+
+    // Remove response-only fields that must not be in PUT body
+    const removeKeys = [
+      'id', 'Id', 'object', 'Object',
+      'edit', 'Edit', 'viewPassword', 'ViewPassword',
+      'permissions', 'Permissions',
+      'archivedDate', 'ArchivedDate',
+      'attachments', 'Attachments',
+      'passwordHistory', 'PasswordHistory',
+      'collectionIds', 'CollectionIds',
+      'deletedDate', 'DeletedDate',
+      'data', 'Data',
+      'sizeName', 'SizeName',
+    ];
+    for (const key of removeKeys) {
+      delete payload[key];
+    }
+
+    // Set LastKnownRevisionDate from fresh data
+    const revDate = base.RevisionDate || base.revisionDate || base.LastKnownRevisionDate;
+    payload.LastKnownRevisionDate = revDate || new Date().toISOString();
+    delete payload.revisionDate;
+    delete payload.RevisionDate;
+    delete payload.creationDate;
+    delete payload.CreationDate;
+
+    // Override with our merged data (the actual modifications we want to make)
+    payload.Type = src.Type ?? src.type ?? payload.Type ?? payload.type;
+    payload.OrganizationId = src.OrganizationId || src.organizationId || payload.OrganizationId || payload.organizationId || null;
+    payload.FolderId = src.FolderId || src.folderId || payload.FolderId || payload.folderId || null;
+    payload.Name = src.Name || src.name || payload.Name || payload.name;
+    payload.Notes = src.Notes || src.notes || payload.Notes || payload.notes || null;
+    payload.Favorite = src.Favorite ?? src.favorite ?? payload.Favorite ?? payload.favorite ?? false;
+    payload.Reprompt = src.Reprompt ?? src.reprompt ?? payload.Reprompt ?? payload.reprompt ?? 0;
+    payload.Fields = src.Fields || src.fields || payload.Fields || payload.fields || [];
+
+    // Ensure Key is present (critical for per-cipher encryption)
+    const keyVal = src.Key || src.key || (current && (current.Key || current.key)) || null;
+    if (keyVal) {
+      payload.Key = keyVal;
+    }
+    // Clean up lowercase duplicates
+    delete payload.type;
+    delete payload.organizationId;
+    delete payload.folderId;
+    delete payload.name;
+    delete payload.notes;
+    delete payload.favorite;
+    delete payload.reprompt;
+    delete payload.fields;
+    delete payload.key;
+
+    // Login-type fields (apply our merged Login data)
+    const srcLogin = src.Login || src.login;
+    if (srcLogin) {
       payload.Login = {
-        Username: login.Username ?? login.username ?? null,
-        Password: login.Password ?? login.password ?? null,
-        PasswordRevisionDate: login.PasswordRevisionDate || login.passwordRevisionDate || null,
-        Totp: login.Totp ?? login.totp ?? null,
-        Uris: (login.Uris || login.uris || []).map(u => ({
+        Username: srcLogin.Username ?? srcLogin.username ?? null,
+        Password: srcLogin.Password ?? srcLogin.password ?? null,
+        PasswordRevisionDate: srcLogin.PasswordRevisionDate || srcLogin.passwordRevisionDate || null,
+        Totp: srcLogin.Totp ?? srcLogin.totp ?? null,
+        Uris: (srcLogin.Uris || srcLogin.uris || []).map(u => ({
           Uri: u.Uri || u.uri || null,
           Match: u.Match ?? u.match ?? null,
           UriChecksum: u.UriChecksum || u.uriChecksum || null,
         })),
-        Fido2Credentials: login.Fido2Credentials || login.fido2Credentials || [],
+        Fido2Credentials: srcLogin.Fido2Credentials || srcLogin.fido2Credentials || [],
       };
+      delete payload.login;
     }
 
-    // Card-type fields
-    const card = src.Card || src.card;
-    if (card) {
-      payload.Card = card;
-    }
+    // Card/Identity/SecureNote (pass-through)
+    if (src.Card || src.card) { payload.Card = src.Card || src.card; delete payload.card; }
+    if (src.Identity || src.identity) { payload.Identity = src.Identity || src.identity; delete payload.identity; }
+    if (src.SecureNote || src.secureNote) { payload.SecureNote = src.SecureNote || src.secureNote; delete payload.secureNote; }
 
-    // Identity-type fields
-    const identity = src.Identity || src.identity;
-    if (identity) {
-      payload.Identity = identity;
-    }
-
-    // SecureNote-type fields
-    const secNote = src.SecureNote || src.secureNote;
-    if (secNote) {
-      payload.SecureNote = secNote;
-    }
-
-    // Per-item encryption key (required if present)
-    if (src.Key || src.key) {
-      payload.Key = src.Key || src.key;
-    }
-
-    console.log(`[updateCipher] PUT /ciphers/${id}`, JSON.stringify(payload).substring(0, 1200));
+    console.log(`[updateCipher] PUT /ciphers/${id} Key=${!!payload.Key}`, JSON.stringify(payload).substring(0, 1500));
 
     const res = await this._authedFetch(`${this.apiUrl}/ciphers/${id}`, {
       method: 'PUT',
