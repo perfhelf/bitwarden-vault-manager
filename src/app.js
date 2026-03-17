@@ -422,7 +422,7 @@ function updateSidebarBadges() {
   const trashBadge = $('#badge-trash');
   if (trashBadge) trashBadge.textContent = allDecryptedTrash.length > 0 ? allDecryptedTrash.length : '';
   // Corrupted badge
-  const corruptedCount = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name).length;
+  const corruptedCount = allDecryptedCiphers.filter(c => c.decrypted?.error || (c.decrypted?.decryptErrors?.length > 0) || !c.decrypted?.name).length;
   const corruptedBadge = $('#badge-corrupted');
   if (corruptedBadge) corruptedBadge.textContent = corruptedCount > 0 ? corruptedCount : '';
   // Dead URL badge
@@ -2812,8 +2812,11 @@ function renderOrphansView() {
 // ========================
 function renderCorruptedView() {
   const container = $('#view-corrupted');
-  // Corrupted = decrypt error OR no title
-  const corrupted = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name);
+  // Corrupted = decrypt error string OR has decryptErrors array OR no title
+  const corrupted = allDecryptedCiphers.filter(c =>
+    c.decrypted?.error || (c.decrypted?.decryptErrors?.length > 0) || !c.decrypted?.name
+  );
+  console.log(`[Corrupted] Found ${corrupted.length} corrupted out of ${allDecryptedCiphers.length} total`);
 
   if (corrupted.length === 0) {
     container.innerHTML = '<div class="empty-state">✅ 未发现损坏条目</div>';
