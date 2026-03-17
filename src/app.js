@@ -2310,6 +2310,7 @@ function renderDuplicatesView() {
               : ''}
             <span class="group-title">${escHtml(group.label)}</span>
             <span class="group-count">${group.items.length} ${t('dup.items')} · ${byUser.length} ${t('dup.accounts')}</span>
+            <button class="single-merge-btn site-merge-btn" data-gi="${globalIdx}">${t('dup.merge.single')}</button>
           </div>
           <div class="dup-items site-items">
             ${byUser.map((userGroup, ui) => `
@@ -2324,7 +2325,11 @@ function renderDuplicatesView() {
 
     <div class="merge-bar" id="merge-bar">
       <span id="merge-count"></span>
-      <button id="merge-btn" class="merge-btn">${t('dup.merge.btn')}</button>
+      <div class="merge-bar-actions">
+        <button id="dup-batch-move-btn" class="merge-bar-btn" title="移动到文件夹">📁 ${t('folder.move')}</button>
+        <button id="dup-batch-delete-btn" class="merge-bar-btn merge-bar-btn-danger" title="批量删除">🗑️ ${t('detail.btn.delete')}</button>
+        <button id="merge-btn" class="merge-btn">${t('dup.merge.btn')}</button>
+      </div>
     </div>
   `;
 
@@ -2363,13 +2368,75 @@ function renderDuplicatesView() {
     updateMergeCount();
   });
 
-  // Single card merge buttons
+  // Single card merge buttons (both exact and same-site)
   container.querySelectorAll('.single-merge-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const gi = parseInt(btn.dataset.gi);
       handleSingleMerge(groups, gi, btn);
     });
+  });
+
+  // Batch delete selected items in duplicates view
+  $('#dup-batch-delete-btn')?.addEventListener('click', () => {
+    const ids = getDupSelectedItemIds();
+    if (ids.length === 0) { showToast('请先勾选要删除的条目', 'warning'); return; }
+    showConfirm(
+      t('batch.delete.title'),
+      `${t('modal.confirm')} ${ids.length} ${t('batch.delete.msg')}`,
+      async () => {
+        try {
+          const deleteSet = new Set(ids);
+          allDecryptedCiphers = allDecryptedCiphers.filter(c => !deleteSet.has(c.id));
+          analysisResult = analyzeCiphers(allDecryptedCiphers);
+          healthResult = analyzeHealth(allDecryptedCiphers);
+          updateSidebarBadges();
+          renderDuplicatesView();
+          showToast(`✅ ${ids.length} ${t('dup.items')} ${t('detail.delete.trash')}`, 'success');
+          for (let i = 0; i < ids.length; i += 100) {
+            await client.softDeleteBulk(ids.slice(i, i + 100));
+          }
+          resyncVault();
+        } catch (err) {
+          showToast(`❌ ${t('detail.delete.fail')}: ${err.message}`, 'error');
+          resyncVault();
+        }
+      }
+    );
+  });
+
+  // Batch move selected items in duplicates view
+  $('#dup-batch-move-btn')?.addEventListener('click', () => {
+    const ids = getDupSelectedItemIds();
+    if (ids.length === 0) { showToast('请先勾选要移动的条目', 'warning'); return; }
+    // Temporarily set selectedItems so showMoveFolderModal works
+    const savedSelection = new Set(selectedItems);
+    selectedItems.clear();
+    ids.forEach(id => selectedItems.add(id));
+    showMoveFolderModal();
+    // After modal closes, restore selection
+    const origClose = $('#move-folder-cancel').onclick;
+    const restoreAndRefresh = () => {
+      selectedItems.clear();
+      savedSelection.forEach(id => selectedItems.add(id));
+      // Refresh duplicates view after move
+      setTimeout(() => {
+        analysisResult = analyzeCiphers(allDecryptedCiphers);
+        healthResult = analyzeHealth(allDecryptedCiphers);
+        updateSidebarBadges();
+        renderDuplicatesView();
+      }, 500);
+    };
+    // Patch the move folder option clicks to also refresh duplicates
+    $('#move-folder-list').querySelectorAll('.move-folder-option').forEach(btn => {
+      const origHandler = btn.onclick;
+      btn.addEventListener('click', restoreAndRefresh);
+    });
+    $('#move-folder-cancel').onclick = () => {
+      $('#move-folder-modal').style.display = 'none';
+      selectedItems.clear();
+      savedSelection.forEach(id => selectedItems.add(id));
+    };
   });
 
   // Click-to-edit: delegate clicks on dup items to open detail drawer
@@ -2470,6 +2537,16 @@ function updateMergeCount() {
   if (exactTotal > 0) parts.push(`${t('dup.exact')} ${exactChecked}/${exactTotal} ${t('dup.groups')}`);
   if (siteChecked > 0) parts.push(`${t('dup.samesite.badge')} ${siteChecked} ${t('dup.entries')}`);
   el.textContent = parts.join(' · ') || t('batch.selected');
+}
+
+/** Collect all selected item IDs from duplicates view checkboxes */
+function getDupSelectedItemIds() {
+  const ids = [];
+  // From same-site checkboxes
+  document.querySelectorAll('.site-item-cb:checked').forEach(cb => {
+    if (cb.dataset.id) ids.push(cb.dataset.id);
+  });
+  return ids;
 }
 
 // ========================

@@ -1492,6 +1492,41 @@ body {
 .merge-btn.success { background: linear-gradient(135deg, #16a34a, #22c55e); }
 .merge-btn.error { background: linear-gradient(135deg, #dc2626, #ef4444); }
 
+.merge-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.merge-bar-btn {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.merge-bar-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--brand);
+}
+.merge-bar-btn-danger:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+}
+[data-theme="dark"] .merge-bar-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.site-merge-btn {
+  margin-left: auto;
+}
+
 /* ============================
    ORPHANS
    ============================ */

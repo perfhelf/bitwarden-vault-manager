@@ -201,6 +201,7 @@ const translations = {
   'folder.unknown': { zh: '未知文件夹', en: 'Unknown Folder' },
   'folder.none': { zh: '无文件夹（取消归类）', en: 'No Folder (remove from folder)' },
   'folder.name.required': { zh: '请输入文件夹名称', en: 'Please enter folder name' },
+  'folder.move': { zh: '移动', en: 'Move' },
   'folder.move.ok': { zh: '已移动到', en: 'moved to' },
 
   // === Modal ===
