@@ -2890,7 +2890,7 @@ async function checkDeadUrls() {
   async function isDomainAlive(domain) {
     const TIMEOUT = 6000;
 
-    // Strategy 1: fetch with no-cors
+    // Strategy 1: fetch with no-cors (works for most sites)
     const fetchProbe = (async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT);
@@ -2908,7 +2908,7 @@ async function checkDeadUrls() {
       }
     })();
 
-    // Strategy 2: <img> favicon probe
+    // Strategy 2: <img> favicon probe (works for Cloudflare-protected sites)
     const imgProbe = new Promise((resolve, reject) => {
       const img = new Image();
       const timer = setTimeout(() => { img.src = ''; reject(new Error('img timeout')); }, TIMEOUT);
@@ -2917,24 +2917,12 @@ async function checkDeadUrls() {
       img.src = `https://${domain}/favicon.ico?_t=${Date.now()}`;
     });
 
-    // Strategy 3: <link> probe (onerror on live domain = CORS block = alive)
-    const linkProbe = new Promise((resolve, reject) => {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.type = 'text/css';
-      const timer = setTimeout(() => { link.remove(); reject(new Error('link timeout')); }, TIMEOUT);
-      link.onload = () => { clearTimeout(timer); link.remove(); resolve(true); };
-      link.onerror = () => { clearTimeout(timer); link.remove(); resolve(true); }; // onerror = DNS resolved = alive
-      link.href = `https://${domain}/favicon.ico?_t=${Date.now()}`;
-      document.head.appendChild(link);
-    });
-
     // Race: any strategy succeeding = domain is alive
     try {
-      await Promise.any([fetchProbe, imgProbe, linkProbe]);
+      await Promise.any([fetchProbe, imgProbe]);
       return true;
     } catch {
-      return false; // all strategies failed
+      return false; // all strategies failed = truly dead
     }
   }
 
