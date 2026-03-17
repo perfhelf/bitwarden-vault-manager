@@ -412,6 +412,13 @@ function updateSidebarBadges() {
   const corruptedCount = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name).length;
   const corruptedBadge = $('#badge-corrupted');
   if (corruptedBadge) corruptedBadge.textContent = corruptedCount > 0 ? corruptedCount : '';
+  // Special type badges
+  const typeMap = { 'type-card': 3, 'type-identity': 4, 'type-note': 2, 'type-sshkey': 5 };
+  for (const [viewName, typeId] of Object.entries(typeMap)) {
+    const count = allDecryptedCiphers.filter(c => (c.raw?.Type ?? c.raw?.type) === typeId).length;
+    const badge = $(`#badge-${viewName}`);
+    if (badge) badge.textContent = count > 0 ? count : '';
+  }
 }
 
 // ========================
@@ -444,7 +451,8 @@ function switchView(view) {
 
   // Show/hide filter bar (only for 'all' and 'folder' views)
   const filterBar = $('#filter-bar');
-  filterBar.style.display = (view === 'all' || view === 'folder') ? 'flex' : 'none';
+  const showFilter = (view === 'all' || view === 'folder' || view.startsWith('type-'));
+  filterBar.style.display = showFilter ? 'flex' : 'none';
 
   // Clear selection on view change
   selectedItems.clear();
@@ -462,6 +470,10 @@ function switchView(view) {
     case 'credfile': renderCredFileView(); break;
     case 'trash': renderTrashView(); break;
     case 'corrupted': renderCorruptedView(); break;
+    case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
+    case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
+    case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
+    case 'type-sshkey': renderTypeFilteredView('type-sshkey', 5, '🔑 SSH 密钥'); break;
   }
 }
 
@@ -485,6 +497,10 @@ function setupSearch() {
         case 'trash': renderTrashView(); break;
         case 'corrupted': renderCorruptedView(); break;
         case 'health': renderHealthView(); break;
+        case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
+        case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
+        case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
+        case 'type-sshkey': renderTypeFilteredView('type-sshkey', 5, '🔑 SSH 密钥'); break;
       }
     }, 200);
   });
@@ -566,6 +582,11 @@ function setupBatchOps() {
     else if (currentView === 'orphans') renderOrphansView();
     else if (currentView === 'nofolder') renderNoFolderView();
     else if (currentView === 'trash') renderTrashView();
+    else if (currentView.startsWith('type-')) {
+      const tMap = { 'type-card': [3, '💳 支付卡'], 'type-identity': [4, '🪪 身份'], 'type-note': [2, '📝 安全笔记'], 'type-sshkey': [5, '🔑 SSH 密钥'] };
+      const [tid, tlabel] = tMap[currentView] || [0, ''];
+      renderTypeFilteredView(currentView, tid, tlabel);
+    }
   });
 
   $('#batch-delete-btn').addEventListener('click', () => {
@@ -2718,6 +2739,111 @@ function renderCorruptedView() {
     });
     updateBatchBar();
     renderCorruptedView();
+  });
+
+  // Click row to open detail
+  container.querySelectorAll('.orphan-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.item-cb')) return;
+      const cipher = allDecryptedCiphers.find(c => c.id === el.dataset.id);
+      if (cipher) openDetailDrawer(cipher);
+    });
+  });
+}
+
+// ========================
+// RENDER: TYPE-FILTERED VIEW (Card, Identity, Note, SSH Key)
+// ========================
+function renderTypeFilteredView(viewName, typeId, title) {
+  const container = $(`#view-${viewName}`);
+  const items = allDecryptedCiphers.filter(c => (c.raw?.Type ?? c.raw?.type) === typeId);
+
+  if (items.length === 0) {
+    container.innerHTML = `<div class="empty-state">📭 暂无${title.replace(/^[^\s]+\s/, '')}条目</div>`;
+    return;
+  }
+
+  let filtered = items;
+  if (searchQuery.trim()) {
+    filtered = items.filter(matchesSearch);
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-state">🔍 未找到匹配的${title.replace(/^[^\s]+\s/, '')}条目</div>`;
+    return;
+  }
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selectedItems.has(c.id));
+
+  // Type-specific subtitle helper
+  const getSubtitle = (item) => {
+    const dec = item.decrypted;
+    switch (typeId) {
+      case 3: { // Card
+        const brand = dec?.cardBrand || dec?.brand || '';
+        const last4 = dec?.cardNumber?.slice(-4) || '';
+        return brand ? `${brand} ****${last4}` : (last4 ? `****${last4}` : '—');
+      }
+      case 4: { // Identity
+        const parts = [dec?.firstName, dec?.lastName].filter(Boolean);
+        return parts.join(' ') || dec?.username || '—';
+      }
+      case 2: // Secure Note
+        return dec?.notes ? dec.notes.substring(0, 60) + (dec.notes.length > 60 ? '...' : '') : '—';
+      case 5: // SSH Key
+        return dec?.username || '—';
+      default:
+        return '—';
+    }
+  };
+
+  container.innerHTML = `
+    <div class="section-header">
+      <span class="section-title">
+        <label class="select-all-label">
+          <input type="checkbox" id="${viewName}-select-all-cb" ${allSelected ? 'checked' : ''} />
+          ${t('select.all')}
+        </label>
+        ${title} · ${filtered.length} 项
+      </span>
+    </div>
+    ${filtered.map(item => {
+      const checked = selectedItems.has(item.id) ? 'checked' : '';
+      const name = escHtml(item.decrypted?.name || '(无标题)');
+      const subtitle = escHtml(getSubtitle(item));
+      const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
+      return `
+      <div class="orphan-item selectable" data-id="${item.id}">
+        <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
+        <div class="item-info">
+          <div class="item-name">${name}</div>
+          <div class="item-meta">
+            <span>${subtitle}</span>
+            <span>📁 ${folder}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // Checkbox events
+  container.querySelectorAll('.item-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedItems.add(cb.dataset.id);
+      else selectedItems.delete(cb.dataset.id);
+      updateBatchBar();
+    });
+  });
+
+  // Select all
+  $(`#${viewName}-select-all-cb`)?.addEventListener('change', (e) => {
+    filtered.forEach(c => {
+      if (e.target.checked) selectedItems.add(c.id);
+      else selectedItems.delete(c.id);
+    });
+    updateBatchBar();
+    renderTypeFilteredView(viewName, typeId, title);
   });
 
   // Click row to open detail

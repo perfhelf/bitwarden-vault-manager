@@ -164,7 +164,29 @@
             <span class="nav-badge danger" id="badge-corrupted"></span>
           </button>
 
-          <!-- Folder Section -->
+          <!-- Special Types Section -->
+          <div class="sidebar-divider"></div>
+          <button class="nav-item" data-view="type-card">
+            <span class="nav-icon">💳</span>
+            <span class="nav-label">支付卡</span>
+            <span class="nav-badge" id="badge-type-card"></span>
+          </button>
+          <button class="nav-item" data-view="type-identity">
+            <span class="nav-icon">🪪</span>
+            <span class="nav-label">身份</span>
+            <span class="nav-badge" id="badge-type-identity"></span>
+          </button>
+          <button class="nav-item" data-view="type-note">
+            <span class="nav-icon">📝</span>
+            <span class="nav-label">安全笔记</span>
+            <span class="nav-badge" id="badge-type-note"></span>
+          </button>
+          <button class="nav-item" data-view="type-sshkey">
+            <span class="nav-icon">🔑</span>
+            <span class="nav-label">SSH 密钥</span>
+            <span class="nav-badge" id="badge-type-sshkey"></span>
+          </button>
+
           <div class="sidebar-divider"></div>
           <div class="sidebar-section-header">
             <span class="sidebar-section-title" data-i18n="nav.folders">📁 文件夹</span>
@@ -237,6 +259,10 @@
         <div id="view-credfile" class="content-view"></div>
         <div id="view-trash" class="content-view"></div>
         <div id="view-corrupted" class="content-view"></div>
+        <div id="view-type-card" class="content-view"></div>
+        <div id="view-type-identity" class="content-view"></div>
+        <div id="view-type-note" class="content-view"></div>
+        <div id="view-type-sshkey" class="content-view"></div>
       </main>
     </div>
 
