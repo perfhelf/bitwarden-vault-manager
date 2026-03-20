@@ -482,6 +482,28 @@ function buildPasskeyMerge_CreateThenDelete(group, keepItem, removeItems, toCrea
       }
     }
 
+    // 1.5. Merge Password (passkey-only item has no password → take from removeItem)
+    if (keepLogin && removeRaw?.Login) {
+      const keepPw = keepLogin.Password || keepLogin.password || '';
+      const removePw = removeRaw.Login.Password || removeRaw.Login.password || '';
+      if (!keepPw && removePw) {
+        if (keepLogin.Password !== undefined) keepLogin.Password = removePw;
+        else keepLogin.password = removePw;
+        needsMerge = true;
+      }
+    }
+
+    // 1.6. Merge Username (passkey-only item may have no username → take from removeItem)
+    if (keepLogin && removeRaw?.Login) {
+      const keepUser = keepLogin.Username || keepLogin.username || '';
+      const removeUser = removeRaw.Login.Username || removeRaw.Login.username || '';
+      if (!keepUser && removeUser) {
+        if (keepLogin.Username !== undefined) keepLogin.Username = removeUser;
+        else keepLogin.username = removeUser;
+        needsMerge = true;
+      }
+    }
+
     // 2. Merge TOTP
     if (keepLogin && removeRaw?.Login) {
       const keepTotp = keepLogin.Totp || keepLogin.totp;
