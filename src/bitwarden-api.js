@@ -33,6 +33,7 @@ export class BitwardenClient {
     }
     this.accessToken = null;
     this.refreshToken = null;
+    this.clientVersion = '2025.1.0';
   }
 
   /**
@@ -41,7 +42,11 @@ export class BitwardenClient {
   async prelogin(email) {
     const res = await fetch(`${this.identityUrl}/accounts/prelogin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Bitwarden-Client-Version': this.clientVersion,
+        'Bitwarden-Client-Name': 'web',
+      },
       body: JSON.stringify({ email }),
     });
     if (!res.ok) throw new Error(`Prelogin failed: ${res.status}`);
@@ -71,7 +76,11 @@ export class BitwardenClient {
 
     const res = await fetch(`${this.identityUrl}/connect/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Bitwarden-Client-Version': this.clientVersion,
+        'Bitwarden-Client-Name': 'web',
+      },
       body: body.toString(),
     });
 
@@ -123,7 +132,11 @@ export class BitwardenClient {
 
     const res = await fetch(`${this.identityUrl}/connect/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Bitwarden-Client-Version': this.clientVersion,
+        'Bitwarden-Client-Name': 'web',
+      },
       body: body.toString(),
     });
 
@@ -556,6 +569,8 @@ export class BitwardenClient {
       const headers = {
         ...options.headers,
         Authorization: `Bearer ${this.accessToken}`,
+        'Bitwarden-Client-Version': this.clientVersion,
+        'Bitwarden-Client-Name': 'web',
       };
       try {
         const res = await fetch(url, { ...options, headers });
