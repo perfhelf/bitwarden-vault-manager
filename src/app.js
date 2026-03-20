@@ -4404,7 +4404,7 @@ async function handleMerge(groups) {
     // Group by username: only merge items with same username
     const byUser = new Map();
     for (const item of checkedItems) {
-      const user = item.decrypted?.username || '';
+      const user = (item.decrypted?.username || '').toLowerCase();
       if (!byUser.has(user)) byUser.set(user, []);
       byUser.get(user).push(item);
     }
@@ -4838,7 +4838,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
 
   // === Safety guard: block merging same-site items with different usernames ===
   if (group.type === 'same_site') {
-    const usernames = new Set(group.items.map(i => i.decrypted?.username || ''));
+    const usernames = new Set(group.items.map(i => (i.decrypted?.username || '').toLowerCase()));
     if (usernames.size > 1) {
       showToast('⛔ 不同用户名的条目无法合并，以防止凭据丢失', 'warning');
       return;

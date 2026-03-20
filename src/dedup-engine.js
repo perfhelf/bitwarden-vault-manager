@@ -53,7 +53,7 @@ function isDeeplyIdentical(a, b) {
 
   // Core fields
   if (da.name !== db.name) return false;
-  if (da.username !== db.username) return false;
+  if ((da.username || '').toLowerCase() !== (db.username || '').toLowerCase()) return false;
   if (da.password !== db.password) return false;
   if (da.totp !== db.totp) return false;
   if ((da.notes || '') !== (db.notes || '')) return false;
@@ -158,7 +158,7 @@ function findExactDuplicates(logins) {
     const uri = getPrimaryUri(login);
     const username = login.decrypted?.username || '';
     const password = login.decrypted?.password || '';
-    const key = `exact::${normalizeUri(uri)}::${username}::${password}`;
+    const key = `exact::${normalizeUri(uri)}::${username.toLowerCase()}::${password}`;
 
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(login);
