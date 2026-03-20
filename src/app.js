@@ -4836,15 +4836,31 @@ async function handleSingleMerge(groups, gi, btnEl) {
   const group = groups[gi];
   if (!group) return;
 
-  // === Safety guard: block merging same-site items with different usernames ===
+  // === For same-site groups: filter to only checked items ===
+  let mergeItems = group.items;
   if (group.type === 'same_site') {
-    const usernames = new Set(group.items.map(i => (i.decrypted?.username || '').toLowerCase()));
+    const checkedIds = new Set();
+    document.querySelectorAll(`.site-item-cb[data-gi="${gi}"]:checked`).forEach(cb => {
+      checkedIds.add(cb.dataset.id);
+    });
+    if (checkedIds.size > 0) {
+      mergeItems = group.items.filter(i => checkedIds.has(i.id));
+    }
+    if (mergeItems.length < 2) {
+      showToast('⛔ 请至少勾选 2 个条目', 'warning');
+      return;
+    }
+  }
+
+  // === Safety guard: block merging items with different usernames ===
+  if (group.type === 'same_site') {
+    const usernames = new Set(mergeItems.map(i => (i.decrypted?.username || '').toLowerCase()));
     if (usernames.size > 1) {
       showToast('⛔ 不同用户名的条目无法合并，以防止凭据丢失', 'warning');
       return;
     }
     // Same username but different passwords → warn and block
-    const passwords = new Set(group.items.map(i => i.decrypted?.password || ''));
+    const passwords = new Set(mergeItems.map(i => i.decrypted?.password || ''));
     if (passwords.size > 1) {
       showToast('⚠️ 条目密码不同，请检查', 'warning');
       return;
@@ -4852,7 +4868,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
   }
 
   // === Safety guard: block merging items with different passkeys (decrypt to compare) ===
-  const itemsWithPasskeys = group.items.filter(i => {
+  const itemsWithPasskeys = mergeItems.filter(i => {
     const fido = i.raw?.Login?.Fido2Credentials || i.raw?._original?.Login?.Fido2Credentials || [];
     return fido.length > 0;
   });
@@ -4876,8 +4892,23 @@ async function handleSingleMerge(groups, gi, btnEl) {
     }
   }
 
-  const keepIndex = group.selectedKeepIndex || 0;
-  const mergeGroup = { ...group, keepItem: group.items[keepIndex] };
+  // Use only checked items for merge, with best item first
+  const sortedMergeItems = [...mergeItems].sort((a, b) => {
+    const aP = a.raw?.Login?.Fido2Credentials?.length || 0;
+    const bP = b.raw?.Login?.Fido2Credentials?.length || 0;
+    if (aP !== bP) return bP - aP;
+    const aT = a.decrypted?.totp ? 1 : 0;
+    const bT = b.decrypted?.totp ? 1 : 0;
+    if (aT !== bT) return bT - aT;
+    const aF = a.decrypted?.fields?.length || 0;
+    const bF = b.decrypted?.fields?.length || 0;
+    if (aF !== bF) return bF - aF;
+    const aN = a.decrypted?.notes?.length || 0;
+    const bN = b.decrypted?.notes?.length || 0;
+    if (aN !== bN) return bN - aN;
+    return new Date(b.raw?.RevisionDate || 0) - new Date(a.raw?.RevisionDate || 0);
+  });
+  const mergeGroup = { ...group, items: sortedMergeItems, keepItem: sortedMergeItems[0] };
 
   // Lock immediately
   isMergeLocked = true;
