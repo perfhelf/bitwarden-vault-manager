@@ -1,0 +1,8 @@
+# Bitwarden Vault Manager — bitwarden.xuebz.com
+# Open-source client-side encrypted Bitwarden vault management dashboard
+
+User-agent: *
+Allow: /
+
+# AI Discovery
+Sitemap: https://bitwarden.xuebz.com/sitemap.xml

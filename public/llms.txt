@@ -1,0 +1,104 @@
+# Bitwarden Vault Manager
+> Open-source, client-side encrypted Bitwarden vault management dashboard. All cryptographic operations (PBKDF2/Argon2 key derivation, HKDF stretch, AES-256-CBC encrypt/decrypt) execute entirely in the browser — zero plaintext data ever reaches any server.
+
+## Live Demo
+- URL: https://bitwarden.xuebz.com/
+- Demo Mode: Click "Demo Mode" button on login page to explore all features without a Bitwarden account
+- Languages: Chinese (中文) and English, auto-detected by browser with manual toggle
+
+## Core Architecture
+- **Frontend**: Pure HTML + CSS + JavaScript (zero framework dependencies — no React, Vue, or Angular)
+- **Build Tool**: Vite
+- **Cryptography**: Web Crypto API (PBKDF2 path) + argon2-browser (Argon2id path), HKDF-Expand (RFC 5869), AES-256-CBC with HMAC-SHA256 verification
+- **Deployment**: Vercel (static site + Rewrites proxy to Bitwarden API)
+- **API Proxy**: Vercel Rewrites forward `/bw-identity/*` and `/bw-api/*` to official Bitwarden endpoints (US + EU regions), eliminating CORS issues without exposing credentials
+
+## Authentication Methods
+1. **API Key Login (Recommended)**: Uses Bitwarden's official client_id + client_secret + email + master password. The master password never leaves the browser — only a PBKDF2-hashed derivation is sent for key exchange.
+2. **Encrypted Credential File**: Generate an AES-256-GCM encrypted `.bwcred` file after login. Next time, drag-and-drop the file + enter its passphrase for instant one-click login. No need to re-enter API keys.
+3. **Session Persistence**: Uses sessionStorage to maintain login state within a browser tab. Closing the tab clears all secrets.
+
+## Feature: Smart Deduplication Engine
+The dedup engine (dedup-engine.js, 766 lines) implements a sophisticated Fusion Strategy:
+- **Exact Duplicate Detection**: Matches on URI + username + password triple across all login items
+- **Same-Site Detection**: Groups items sharing the same registered domain (supports Android/iOS app URI schemes like `androidapp://com.example`)
+- **Deep Identity Comparison**: Compares ALL fields — name, TOTP, notes, URIs, custom fields, passkeys (Fido2Credentials), favorite status, re-prompt setting
+- **AB Merge Strategy**:
+  - **Path A (Pure Delete)**: When items are 100% byte-identical across all fields → keep one, soft-delete the rest (30-day recovery)
+  - **Path B (Create-Then-Delete)**: When items have differences → merge data into a single new entry, then delete all originals
+    - Smart Title Selection: Prefers Chinese titles, then shortest; discarded titles saved to notes
+    - URI Simplification: Auto-strips `www.` prefixes and excess paths, deduplicates by registered domain
+    - Field Union: Merges TOTP, custom fields, notes (keeps longest), URIs (union of all), favorite/re-prompt (OR of all)
+    - Password History: Collects and deduplicates from all original items
+  - **Passkey-Aware Merge**: Items with Fido2Credentials (WebAuthn passkeys) use per-cipher encryption keys. The engine preserves the encrypted Key + Fido2Credentials through a full Create-Then-Delete cycle, as Bitwarden's API rejects PUT updates on passkey-holding ciphers
+- **eTLD+1 Domain Normalization**: Built-in registry of multi-part TLDs (co.uk, com.cn, co.jp, etc.) for accurate same-site grouping across 30+ country-code TLDs
+- **Safety**: All deletes are soft-deletes (30-day trash recovery). Path B only deletes originals AFTER the new merged item is confirmed created on the server
+
+## Feature: Vault Health Analysis
+The health engine scores your vault 0–100 and flags:
+- **Weak Passwords** (high severity): Length < 8, digits-only, or letters-only
+- **Empty Passwords** (high severity): Login items with no password AND no passkey
+- **Password Reuse** (medium): Same password used across multiple sites
+- **Stale Passwords** (medium): Not updated in over 1 year
+- **Insecure URIs** (medium): Sites using `http://` instead of `https://`
+- **Missing URLs** (low): Login items with no URL configured
+- **Missing Titles** (low): Items with blank names
+- **Decrypt Failures** (high): Items that failed to decrypt (corrupted data)
+- **Scoring Formula**: `score = 100 - (highCount × 3 + medCount × 1.5 + lowCount × 0.5) / totalLogins × 25`
+
+## Feature: URL Dead Link Detection
+- **Full-Vault Scan**: Automatically checks every login item's URL for connectivity after vault sync
+- **Dual-Strategy Probing**: Uses fetch (no-cors mode) + `<img>` favicon verification to detect dead domains
+- **Smart Whitelist**: Built-in ~200 major domain whitelist (Google, Apple, Microsoft, Amazon, Meta, Netflix, GitHub, etc.) with parent-domain matching — skipped automatically to reduce false positives from bot protection
+- **Real-Time Progress**: Animated gradient progress bar with domain counter during scanning
+- **ID Deduplication**: Same item never appears twice in results
+- **Batch Operations**: Select-all, batch delete, batch move for dead-link items
+
+## Feature: Full Item Management
+- View/edit ALL decrypted fields: name, username, password, TOTP, URIs, notes, custom fields (text/hidden/boolean/linked)
+- **Five Item Types**: Login 🔐, Payment Card 💳, Identity 🪪, Secure Note 📝, SSH Key 🔑 — each with dedicated sidebar section
+- Folder management: Create, rename, delete folders; batch move items between folders
+- Favorites view, corrupted items view, trash with restore/permanent-delete
+- Advanced search: Filter by name, username, URL across all items with keyboard shortcut (press `/` to focus)
+
+## Feature: Optimistic Hot Update
+- **Instant UI**: All operations (delete, edit, move, folder management) update the interface immediately without waiting for server confirmation
+- **Background Sync**: Server operations execute asynchronously in the background
+- **Auto-Rollback on Failure**: If the server operation fails, a toast notification appears and the vault auto-resyncs to restore correct state
+- **Pessimistic Exception**: Permanent delete operations use pessimistic mode — UI only updates after server confirms success (irreversible action protection)
+
+## Feature: Internationalization (i18n)
+- Full Chinese (zh) and English (en) translation with 375+ translation keys
+- Browser language auto-detection with manual toggle
+- All UI elements use `data-i18n` attributes for dynamic locale switching
+- Covers: login, dashboard, duplicates, health, search, batch actions, detail drawer, edit form, trash, merge progress, credential file, toasts
+
+## Feature: Encrypted Credential File
+- After login, generate an AES-256-GCM encrypted `.bwcred` file containing your API credentials
+- Set a custom passphrase to protect the file
+- Next login: drag-and-drop the file → enter passphrase → instant one-click authentication
+- The file contains encrypted API key + email + server info; master password or vault data is NEVER stored in the file
+
+## Security Guarantees
+1. Master password NEVER leaves the browser — only PBKDF2-derived hash sent for API key exchange
+2. All vault decryption uses Web Crypto API (AES-256-CBC + HMAC-SHA256 verification in-browser)
+3. Supports both PBKDF2-SHA256 and Argon2id key derivation (auto-detected from Bitwarden account settings)
+4. HKDF-Expand (RFC 5869 §2.3) implemented manually because Web Crypto's HKDF does Extract+Expand which produces wrong results for Bitwarden's protocol
+5. Session data stored in sessionStorage only — cleared when tab closes
+6. No server-side storage, no database, no analytics, no tracking
+7. Vercel Rewrites used purely as CORS proxy; no request body inspection or logging
+8. Full source code available at: https://github.com/perfhelf/bitwarden-vault-manager
+
+## Source Code
+- Repository: https://github.com/perfhelf/bitwarden-vault-manager
+- License: MIT
+- Key Files:
+  - `src/app.js` — Main application logic, URL dead-link detection, optimistic hot update, UI rendering
+  - `src/bitwarden-api.js` — Bitwarden REST API client (auth, sync, CRUD, folder management)
+  - `src/crypto.js` — Complete cryptographic pipeline (PBKDF2/Argon2 → HKDF-Expand → AES-256-CBC encrypt/decrypt)
+  - `src/dedup-engine.js` — 766-line deduplication and smart merge engine with Fusion Strategy
+  - `src/health-engine.js` — Vault health scoring with 8 risk categories
+  - `src/search-engine.js` — Search and filter engine
+  - `src/i18n.js` — 375+ key bilingual translation system
+  - `src/demo-data.js` — Demo mode data generator
+  - `src/theme.js` — Dark/light theme manager

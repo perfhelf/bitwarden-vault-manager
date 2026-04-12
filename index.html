@@ -3,9 +3,66 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bitwarden Vault Manager — 密码管理面板</title>
+  <title>Bitwarden Vault Manager — Open-Source Client-Side Encrypted Password Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <meta name="description" content="客户端加密的 Bitwarden 密码管理面板：智能去重、批量操作、健康分析、去重合并" />
+  <meta name="description" content="Open-source Bitwarden vault management dashboard with client-side encryption. Smart deduplication with AB merge strategy, vault health scoring, URL dead-link detection, passkey-aware merge, batch operations, and full i18n support. All crypto runs in your browser — zero plaintext reaches any server." />
+  <meta name="keywords" content="Bitwarden, password manager, vault manager, deduplication, password health, client-side encryption, open source, PBKDF2, Argon2, AES-256, passkey, WebAuthn, FIDO2" />
+  <link rel="canonical" href="https://bitwarden.xuebz.com/" />
+  <meta name="robots" content="index, follow" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Bitwarden Vault Manager — Client-Side Encrypted Password Dashboard" />
+  <meta property="og:description" content="Open-source Bitwarden vault management: smart deduplication, health scoring, URL dead-link detection, passkey-aware merge. All encryption in-browser." />
+  <meta property="og:url" content="https://bitwarden.xuebz.com/" />
+  <meta property="og:site_name" content="Bitwarden Vault Manager" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Bitwarden Vault Manager" />
+  <meta name="twitter:description" content="Open-source client-side encrypted Bitwarden vault dashboard. Smart dedup, health analysis, batch operations." />
+
+  <!-- JSON-LD: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Bitwarden Vault Manager",
+    "url": "https://bitwarden.xuebz.com/",
+    "description": "Open-source, client-side encrypted Bitwarden vault management dashboard featuring smart deduplication with AB merge strategy, vault health scoring, URL dead-link detection, passkey-aware merge, and full bilingual support.",
+    "applicationCategory": "SecurityApplication",
+    "operatingSystem": "Web Browser",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "BigFishMarquis",
+      "url": "https://github.com/perfhelf"
+    },
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "https://github.com/perfhelf/bitwarden-vault-manager",
+    "featureList": [
+      "Client-side AES-256-CBC encryption with HMAC-SHA256 verification",
+      "PBKDF2 and Argon2id key derivation support",
+      "Smart deduplication with AB merge strategy (Pure Delete + Create-Then-Delete)",
+      "Passkey/FIDO2/WebAuthn-aware merge with per-cipher key preservation",
+      "Vault health scoring (0-100) with 8 risk categories",
+      "URL dead-link detection with dual-strategy probing and 200+ domain whitelist",
+      "Optimistic hot update with auto-rollback on failure",
+      "Full internationalization (Chinese + English, 375+ keys)",
+      "Encrypted credential file (AES-256-GCM) for one-click re-login",
+      "Batch operations: select-all, move, delete across all views",
+      "Five item types: Login, Card, Identity, Secure Note, SSH Key",
+      "Folder management: create, rename, delete, batch move",
+      "Demo mode for exploring without a Bitwarden account"
+    ],
+    "sameAs": ["https://github.com/perfhelf/bitwarden-vault-manager"]
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -358,6 +415,51 @@
       </div>
     </div>
   </div>
+
+  <!-- SEO: Full product description for crawlers that don't execute JS -->
+  <noscript>
+    <div style="max-width:800px;margin:2rem auto;padding:1.5rem;font-family:Inter,sans-serif;line-height:1.8;color:#e0e0e0;background:#0a0a0f;">
+      <h1>🔐 Bitwarden Vault Manager</h1>
+      <p><strong>Open-source, client-side encrypted Bitwarden vault management dashboard.</strong> All cryptographic operations — PBKDF2/Argon2id key derivation, HKDF-Expand (RFC 5869), AES-256-CBC encrypt/decrypt with HMAC-SHA256 verification — execute entirely in your browser. Zero plaintext data ever reaches any server.</p>
+      <p><a href="https://bitwarden.xuebz.com/">Live Demo</a> | <a href="https://github.com/perfhelf/bitwarden-vault-manager">GitHub Source Code (MIT License)</a></p>
+
+      <h2>🔍 Smart Deduplication Engine</h2>
+      <p>766-line Fusion Strategy engine that detects exact duplicates (URI + username + password triple match) and same-site duplicates (shared registered domain with eTLD+1 normalization across 30+ country-code TLDs). Deep identity comparison covers ALL fields: name, TOTP, notes, URIs, custom fields, passkeys (Fido2Credentials), favorite status, and re-prompt settings.</p>
+      <ul>
+        <li><strong>Path A (Pure Delete)</strong>: 100% byte-identical items → keep one, soft-delete the rest (30-day recovery)</li>
+        <li><strong>Path B (Create-Then-Delete)</strong>: Items with differences → smart merge (Chinese title priority, URI simplification, field union, password history collection) → create new entry → delete originals only after server confirmation</li>
+        <li><strong>Passkey-Aware Merge</strong>: Preserves per-cipher encryption Key + Fido2Credentials through full Create-Then-Delete cycle, as Bitwarden's API rejects PUT updates on passkey-holding ciphers</li>
+      </ul>
+
+      <h2>🏥 Vault Health Analysis</h2>
+      <p>Scores your vault 0–100 with 8 risk categories: weak passwords (length &lt; 8, digits-only, letters-only), empty passwords (excluding passkey items), password reuse across sites, stale passwords (&gt;1 year), insecure HTTP URIs, missing URLs, missing titles, and decrypt failures. Scoring formula: score = 100 - (high×3 + medium×1.5 + low×0.5) / totalLogins × 25.</p>
+
+      <h2>🔗 URL Dead Link Detection</h2>
+      <p>Full-vault scan using dual-strategy probing (fetch no-cors + img favicon). Built-in whitelist of ~200 major domains (Google, Apple, Microsoft, Amazon, Meta, Netflix, GitHub, etc.) with parent-domain matching to reduce false positives. Real-time progress bar with domain counter. Batch operations on detected dead links.</p>
+
+      <h2>⚡ Optimistic Hot Update</h2>
+      <p>All operations update the UI instantly. Server operations execute asynchronously in the background. Failed operations trigger toast notification + automatic vault resync. Permanent deletes use pessimistic mode (UI updates only after server confirmation).</p>
+
+      <h2>📝 Full Item Management</h2>
+      <p>Five item types with dedicated sidebar sections: Login 🔐 (with TOTP, passkeys, custom fields), Payment Card 💳, Identity 🪪, Secure Note 📝, SSH Key 🔑. Full folder management (create, rename, delete, batch move). Advanced search with keyboard shortcut (press / to focus). Favorites, corrupted items, trash with restore/permanent-delete.</p>
+
+      <h2>🔒 Security</h2>
+      <ul>
+        <li>Master password NEVER leaves the browser</li>
+        <li>Supports PBKDF2-SHA256 and Argon2id key derivation</li>
+        <li>HKDF-Expand manually implemented (Web Crypto's HKDF does Extract+Expand, wrong for Bitwarden's protocol)</li>
+        <li>Session data in sessionStorage only — cleared when tab closes</li>
+        <li>No server-side storage, no database, no analytics, no tracking</li>
+        <li>Encrypted credential file uses AES-256-GCM</li>
+      </ul>
+
+      <h2>🌍 Internationalization</h2>
+      <p>Full Chinese (中文) and English support with 375+ translation keys. Browser language auto-detection with manual toggle. Covers all UI surfaces: login, dashboard, duplicates, health, search, batch actions, detail drawer, edit form, trash, merge progress, credential file, and toast notifications.</p>
+
+      <h2>🚀 Technology</h2>
+      <p>Pure HTML + CSS + JavaScript (zero framework dependencies). Built with Vite. Deployed on Vercel with Rewrites proxy to Bitwarden official API (US + EU regions). MIT licensed. <a href="https://github.com/perfhelf/bitwarden-vault-manager">View source code on GitHub</a>.</p>
+    </div>
+  </noscript>
 
   <script type="module" src="/src/app.js"></script>
 </body>
