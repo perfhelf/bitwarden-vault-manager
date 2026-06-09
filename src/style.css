@@ -456,22 +456,46 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sidebar-main-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
 }
 
-.sidebar-nav::-webkit-scrollbar {
+.sidebar-folder-section {
+  flex: 0 1 38vh;
+  min-height: 132px;
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-main-nav::-webkit-scrollbar,
+.folder-list::-webkit-scrollbar {
   width: 6px;
 }
 
-.sidebar-nav::-webkit-scrollbar-thumb {
+.sidebar-main-nav::-webkit-scrollbar-thumb,
+.folder-list::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
 }
 
-.sidebar-nav::-webkit-scrollbar-thumb:hover {
+.sidebar-main-nav::-webkit-scrollbar-thumb:hover,
+.folder-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
 
@@ -492,6 +516,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   padding: 4px 12px;
   margin-bottom: 2px;
 }
@@ -528,9 +553,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 260px;
+  flex: 1 1 auto;
+  min-height: 72px;
   overflow-y: auto;
   padding: 0 4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .folder-item {

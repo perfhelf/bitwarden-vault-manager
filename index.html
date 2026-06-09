@@ -182,84 +182,88 @@
         </div>
 
         <nav class="sidebar-nav">
-          <button class="nav-item active" data-view="overview">
-            <span class="nav-icon">📊</span>
-            <span class="nav-label" data-i18n="nav.overview">总览</span>
-          </button>
+          <div class="sidebar-main-nav">
+            <button class="nav-item active" data-view="overview">
+              <span class="nav-icon">📊</span>
+              <span class="nav-label" data-i18n="nav.overview">总览</span>
+            </button>
 
-          <!-- ── 五大类型分栏 ── -->
-          <div class="sidebar-divider"></div>
-          <button class="nav-item" data-view="favorites">
-            <span class="nav-icon">⭐</span>
-            <span class="nav-label" data-i18n="nav.favorites">收藏夹</span>
-            <span class="nav-badge" id="badge-favorites"></span>
-          </button>
-          <button class="nav-item" data-view="type-login">
-            <span class="nav-icon">🔐</span>
-            <span class="nav-label" data-i18n="nav.type.login">登录</span>
-            <span class="nav-badge" id="badge-type-login"></span>
-          </button>
-          <button class="nav-item" data-view="type-card">
-            <span class="nav-icon">💳</span>
-            <span class="nav-label" data-i18n="nav.type.card">支付卡</span>
-            <span class="nav-badge" id="badge-type-card"></span>
-          </button>
-          <button class="nav-item" data-view="type-identity">
-            <span class="nav-icon">🪪</span>
-            <span class="nav-label" data-i18n="nav.type.identity">身份</span>
-            <span class="nav-badge" id="badge-type-identity"></span>
-          </button>
-          <button class="nav-item" data-view="type-note">
-            <span class="nav-icon">📝</span>
-            <span class="nav-label" data-i18n="nav.type.note">安全笔记</span>
-            <span class="nav-badge" id="badge-type-note"></span>
-          </button>
-          <button class="nav-item" data-view="type-sshkey">
-            <span class="nav-icon">🔑</span>
-            <span class="nav-label" data-i18n="nav.type.sshkey">SSH 密钥</span>
-            <span class="nav-badge" id="badge-type-sshkey"></span>
-          </button>
+            <!-- ── 五大类型分栏 ── -->
+            <div class="sidebar-divider"></div>
+            <button class="nav-item" data-view="favorites">
+              <span class="nav-icon">⭐</span>
+              <span class="nav-label" data-i18n="nav.favorites">收藏夹</span>
+              <span class="nav-badge" id="badge-favorites"></span>
+            </button>
+            <button class="nav-item" data-view="type-login">
+              <span class="nav-icon">🔐</span>
+              <span class="nav-label" data-i18n="nav.type.login">登录</span>
+              <span class="nav-badge" id="badge-type-login"></span>
+            </button>
+            <button class="nav-item" data-view="type-card">
+              <span class="nav-icon">💳</span>
+              <span class="nav-label" data-i18n="nav.type.card">支付卡</span>
+              <span class="nav-badge" id="badge-type-card"></span>
+            </button>
+            <button class="nav-item" data-view="type-identity">
+              <span class="nav-icon">🪪</span>
+              <span class="nav-label" data-i18n="nav.type.identity">身份</span>
+              <span class="nav-badge" id="badge-type-identity"></span>
+            </button>
+            <button class="nav-item" data-view="type-note">
+              <span class="nav-icon">📝</span>
+              <span class="nav-label" data-i18n="nav.type.note">安全笔记</span>
+              <span class="nav-badge" id="badge-type-note"></span>
+            </button>
+            <button class="nav-item" data-view="type-sshkey">
+              <span class="nav-icon">🔑</span>
+              <span class="nav-label" data-i18n="nav.type.sshkey">SSH 密钥</span>
+              <span class="nav-badge" id="badge-type-sshkey"></span>
+            </button>
 
-          <!-- ── 横切视图 ── -->
-          <div class="sidebar-divider"></div>
-          <button class="nav-item" data-view="duplicates">
-            <span class="nav-icon">🔀</span>
-            <span class="nav-label" data-i18n="nav.duplicates">重复项</span>
-            <span class="nav-badge warn" id="badge-dup"></span>
-          </button>
-          <button class="nav-item" data-view="nofolder">
-            <span class="nav-icon">📂</span>
-            <span class="nav-label" data-i18n="nav.nofolder">无文件夹</span>
-            <span class="nav-badge" id="badge-nofolder"></span>
-          </button>
-          <button class="nav-item" data-view="health">
-            <span class="nav-icon">🛡️</span>
-            <span class="nav-label" data-i18n="nav.health">健康分析</span>
-            <span class="nav-badge" id="badge-health"></span>
-          </button>
-          <button class="nav-item" data-view="trash">
-            <span class="nav-icon">🗑️</span>
-            <span class="nav-label" data-i18n="nav.trash">回收站</span>
-            <span class="nav-badge" id="badge-trash"></span>
-          </button>
-          <button class="nav-item" data-view="corrupted">
-            <span class="nav-icon">💀</span>
-            <span class="nav-label" data-i18n="nav.corrupted">已损坏</span>
-            <span class="nav-badge danger" id="badge-corrupted"></span>
-          </button>
-          <button class="nav-item" data-view="dead-urls">
-            <span class="nav-icon">🔗</span>
-            <span class="nav-label" data-i18n="nav.deadurls">URL已失效</span>
-            <span class="nav-badge" id="badge-dead-urls"></span>
-          </button>
+            <!-- ── 横切视图 ── -->
+            <div class="sidebar-divider"></div>
+            <button class="nav-item" data-view="duplicates">
+              <span class="nav-icon">🔀</span>
+              <span class="nav-label" data-i18n="nav.duplicates">重复项</span>
+              <span class="nav-badge warn" id="badge-dup"></span>
+            </button>
+            <button class="nav-item" data-view="nofolder">
+              <span class="nav-icon">📂</span>
+              <span class="nav-label" data-i18n="nav.nofolder">无文件夹</span>
+              <span class="nav-badge" id="badge-nofolder"></span>
+            </button>
+            <button class="nav-item" data-view="health">
+              <span class="nav-icon">🛡️</span>
+              <span class="nav-label" data-i18n="nav.health">健康分析</span>
+              <span class="nav-badge" id="badge-health"></span>
+            </button>
+            <button class="nav-item" data-view="trash">
+              <span class="nav-icon">🗑️</span>
+              <span class="nav-label" data-i18n="nav.trash">回收站</span>
+              <span class="nav-badge" id="badge-trash"></span>
+            </button>
+            <button class="nav-item" data-view="corrupted">
+              <span class="nav-icon">💀</span>
+              <span class="nav-label" data-i18n="nav.corrupted">已损坏</span>
+              <span class="nav-badge danger" id="badge-corrupted"></span>
+            </button>
+            <button class="nav-item" data-view="dead-urls">
+              <span class="nav-icon">🔗</span>
+              <span class="nav-label" data-i18n="nav.deadurls">URL已失效</span>
+              <span class="nav-badge" id="badge-dead-urls"></span>
+            </button>
+          </div>
 
           <!-- ── 文件夹 ── -->
-          <div class="sidebar-divider"></div>
-          <div class="sidebar-section-header">
-            <span class="sidebar-section-title" data-i18n="nav.folders">📁 文件夹</span>
-            <button class="folder-add-btn" id="folder-add-btn" title="新建文件夹" data-i18n-title="nav.folders.add">+</button>
-          </div>
-          <div id="folder-list" class="folder-list"></div>
+          <section class="sidebar-folder-section" aria-labelledby="sidebar-folder-title">
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-section-header">
+              <span id="sidebar-folder-title" class="sidebar-section-title" data-i18n="nav.folders">📁 文件夹</span>
+              <button class="folder-add-btn" id="folder-add-btn" title="新建文件夹" data-i18n-title="nav.folders.add">+</button>
+            </div>
+            <div id="folder-list" class="folder-list"></div>
+          </section>
         </nav>
 
         <div class="sidebar-footer">
