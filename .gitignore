@@ -31,3 +31,4 @@ open-source/
 *.sln
 *.sw?
 .vercel
+.wrangler-pages-build-local/

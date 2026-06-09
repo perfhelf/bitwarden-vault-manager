@@ -425,11 +425,13 @@ body {
   flex-shrink: 0;
   position: sticky;
   top: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
   padding: 20px 16px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .sidebar-logo {
@@ -448,16 +450,35 @@ body {
 }
 
 .sidebar-nav {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .sidebar-footer {
   padding: 12px 8px;
   border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 /* --- Folder Section --- */
@@ -2837,4 +2858,3 @@ body {
     font-size: 0.55rem;
   }
 }
-
