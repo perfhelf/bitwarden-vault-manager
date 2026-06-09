@@ -6,7 +6,7 @@
  * 1. Personal API Key (recommended, bypasses CAPTCHA)
  * 2. Master password (may trigger CAPTCHA)
  * 
- * Uses Vite proxy / Vercel rewrites to bypass CORS
+ * Uses Vite dev proxy / Cloudflare Pages Functions to bypass CORS
  */
 
 const SERVERS = {
@@ -148,7 +148,7 @@ export class BitwardenClient {
         throw {
           type: 'captcha_required',
           siteKey: data.HCaptcha_SiteKey,
-          message: '需要验证码。请改用 API Key 登录方式（推荐）。',
+          message: 'CAPTCHA is required. Please use API Key login instead (recommended).',
         };
       }
       // Check for 2FA requirement

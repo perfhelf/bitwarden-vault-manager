@@ -73,18 +73,21 @@ npm install
 npm run dev
 ```
 
-### 部署到 Vercel
+### 部署到 Cloudflare Pages
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/perfhelf/bitwarden-vault-manager)
+```bash
+npm run build
+wrangler pages deploy dist --project-name bitwarden-vault-manager --branch main
+```
 
-项目使用 Vercel Rewrites 代理 Bitwarden 官方 API，无需配置任何环境变量。
+项目使用 Cloudflare Pages Functions 代理 Bitwarden 官方 API（US + EU），无需配置任何环境变量。
 
 ## 🏗️ 技术架构
 
 - **前端**：纯 HTML + CSS + JavaScript（无框架依赖）
 - **构建**：Vite
 - **加密**：Web Crypto API + argon2-browser
-- **部署**：Vercel（静态站点 + Rewrites 代理）
+- **部署**：Cloudflare Pages（静态站点 + Pages Functions 代理）
 
 ### 项目结构
 

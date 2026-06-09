@@ -10,8 +10,8 @@
 - **Frontend**: Pure HTML + CSS + JavaScript (zero framework dependencies — no React, Vue, or Angular)
 - **Build Tool**: Vite
 - **Cryptography**: Web Crypto API (PBKDF2 path) + argon2-browser (Argon2id path), HKDF-Expand (RFC 5869), AES-256-CBC with HMAC-SHA256 verification
-- **Deployment**: Vercel (static site + Rewrites proxy to Bitwarden API)
-- **API Proxy**: Vercel Rewrites forward `/bw-identity/*` and `/bw-api/*` to official Bitwarden endpoints (US + EU regions), eliminating CORS issues without exposing credentials
+- **Deployment**: Cloudflare Pages (static site + Pages Functions proxy to Bitwarden API)
+- **API Proxy**: Cloudflare Pages Functions forward `/bw-identity/*`, `/bw-api/*`, `/bw-eu-identity/*`, and `/bw-eu-api/*` to official Bitwarden endpoints (US + EU regions), eliminating CORS issues without exposing credentials
 
 ## Authentication Methods
 1. **API Key Login (Recommended)**: Uses Bitwarden's official client_id + client_secret + email + master password. The master password never leaves the browser — only a PBKDF2-hashed derivation is sent for key exchange.
@@ -86,7 +86,7 @@ The health engine scores your vault 0–100 and flags:
 4. HKDF-Expand (RFC 5869 §2.3) implemented manually because Web Crypto's HKDF does Extract+Expand which produces wrong results for Bitwarden's protocol
 5. Session data stored in sessionStorage only — cleared when tab closes
 6. No server-side storage, no database, no analytics, no tracking
-7. Vercel Rewrites used purely as CORS proxy; no request body inspection or logging
+7. Cloudflare Pages Functions are used purely as a CORS proxy; no request body inspection or logging
 8. Full source code available at: https://github.com/perfhelf/bitwarden-vault-manager
 
 ## Source Code

@@ -36,6 +36,35 @@ let deadUrlCheckProgress = { checked: 0, total: 0 }; // Progress tracking
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+const TYPE_META = {
+  1: { view: 'type-login', icon: '🔐', key: 'type.login' },
+  2: { view: 'type-note', icon: '📝', key: 'type.note' },
+  3: { view: 'type-card', icon: '💳', key: 'type.card' },
+  4: { view: 'type-identity', icon: '🪪', key: 'type.identity' },
+  5: { view: 'type-sshkey', icon: '🔑', key: 'type.sshkey' },
+};
+
+const VIEW_TYPE_ID = {
+  'type-login': 1,
+  'type-note': 2,
+  'type-card': 3,
+  'type-identity': 4,
+  'type-sshkey': 5,
+};
+
+function typeName(typeId) {
+  return t(TYPE_META[typeId]?.key || 'type.item');
+}
+
+function typeTitle(typeId) {
+  const meta = TYPE_META[typeId];
+  return meta ? `${meta.icon} ${typeName(typeId)}` : t('type.item');
+}
+
+function renderCurrentView() {
+  switchView(currentView);
+}
+
 // ========================
 // SESSION PERSISTENCE
 // ========================
@@ -482,10 +511,14 @@ function switchView(view) {
   updateBatchBar();
 
   // Render the view
+  if (VIEW_TYPE_ID[view]) {
+    renderTypeFilteredView(view, VIEW_TYPE_ID[view]);
+    return;
+  }
+
   switch (view) {
     case 'overview': renderOverview(); break;
     case 'favorites': renderFavoritesView(); break;
-    case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
     case 'duplicates': renderDuplicatesView(); break;
     case 'nofolder': renderNoFolderView(); break;
     case 'health': renderHealthView(); break;
@@ -494,10 +527,6 @@ function switchView(view) {
     case 'trash': renderTrashView(); break;
     case 'corrupted': renderCorruptedView(); break;
     case 'dead-urls': renderDeadUrlsView(); break;
-    case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
-    case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
-    case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
-    case 'type-sshkey': renderTypeFilteredView('type-sshkey', 5, '🔑 SSH 密钥'); break;
   }
 }
 
@@ -512,21 +541,7 @@ function setupSearch() {
     timeout = setTimeout(() => {
       searchQuery = input.value;
       // Re-render whichever view is active
-      switch (currentView) {
-        case 'type-login': renderTypeFilteredView('type-login', 1, '🔐 登录'); break;
-        case 'favorites': renderFavoritesView(); break;
-        case 'duplicates': renderDuplicatesView(); break;
-        case 'nofolder': renderNoFolderView(); break;
-        case 'folder': renderFolderView(); break;
-        case 'trash': renderTrashView(); break;
-        case 'corrupted': renderCorruptedView(); break;
-        case 'health': renderHealthView(); break;
-        case 'dead-urls': renderDeadUrlsView(); break;
-        case 'type-card': renderTypeFilteredView('type-card', 3, '💳 支付卡'); break;
-        case 'type-identity': renderTypeFilteredView('type-identity', 4, '🪪 身份'); break;
-        case 'type-note': renderTypeFilteredView('type-note', 2, '📝 安全笔记'); break;
-        case 'type-sshkey': renderTypeFilteredView('type-sshkey', 5, '🔑 SSH 密钥'); break;
-      }
+      renderCurrentView();
     }, 200);
   });
 }
@@ -613,7 +628,7 @@ function setupFilterTags() {
 
   container.innerHTML = QUICK_FILTERS.map(f => `
     <button class="filter-tag" data-filter="${f.id}">
-      ${f.icon} ${f.label}<span class="tag-count">${counts[f.id]}</span>
+      ${f.icon} ${t(f.labelKey)}<span class="tag-count">${counts[f.id]}</span>
     </button>
   `).join('');
 
@@ -677,7 +692,7 @@ function setupBatchOps() {
           }
         } catch (err) {
           console.error('[Delete] Server-side softDeleteBulk failed:', err);
-          showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+          showToast(t('server.delete.fail.rollback', err.message), 'error');
           // Rollback: re-sync from server to restore real state
           await resyncVault();
           return;
@@ -793,7 +808,7 @@ function renderFolderList() {
             await client.deleteFolder(folderId);
           } catch (err) {
             console.error('[Folder] Server deleteFolder failed:', err);
-            showToast(`❌ 文件夹删除失败: ${err.message}，正在回滚…`, 'error');
+            showToast(t('server.folder.delete.fail.rollback', err.message), 'error');
             await resyncVault();
             return;
           }
@@ -850,7 +865,7 @@ function showFolderNameModal(mode, folderId = null) {
         }
       } catch (err) {
         console.error('[Folder] Server operation failed:', err);
-        showToast(`❌ 文件夹操作失败: ${err.message}，正在回滚…`, 'error');
+        showToast(t('server.folder.op.fail.rollback', err.message), 'error');
         await resyncVault();
         confirmBtn.disabled = false;
         confirmBtn.textContent = t('modal.confirm');
@@ -1037,7 +1052,7 @@ function openDetailDrawer(cipher) {
   $('#detail-title').textContent = cipher.decrypted?.name || t('item.untitled');
 
   const body = $('#detail-body');
-  const typeLabels = { 1: t('detail.type.login'), 2: t('detail.type.note'), 3: t('detail.type.card'), 4: t('detail.type.identity'), 5: 'SSH 密钥' };
+  const typeLabels = { 1: t('detail.type.login'), 2: t('detail.type.note'), 3: t('detail.type.card'), 4: t('detail.type.identity'), 5: t('detail.type.ssh') };
   const d = cipher.decrypted;
 
   let html = '';
@@ -1155,11 +1170,11 @@ function openDetailDrawer(cipher) {
   // ── Section: SSH Key ──
   if (cipher.type === 5 && d.sshKey) {
     const ssh = d.sshKey;
-    html += `<div class="detail-section"><div class="detail-section-title">🔑 SSH 密钥</div>`;
-    if (ssh.publicKey) html += detailField('公钥', ssh.publicKey, true);
-    if (ssh.keyFingerprint) html += detailField('指纹', ssh.keyFingerprint, true);
+    html += `<div class="detail-section"><div class="detail-section-title">${t('detail.type.ssh')}</div>`;
+    if (ssh.publicKey) html += detailField(t('detail.ssh.public'), ssh.publicKey, true);
+    if (ssh.keyFingerprint) html += detailField(t('detail.ssh.fingerprint'), ssh.keyFingerprint, true);
     if (ssh.privateKey) {
-      html += `<div class="detail-field"><div class="detail-label">私钥</div>
+      html += `<div class="detail-field"><div class="detail-label">${t('detail.ssh.private')}</div>
         <div class="detail-value">
           <span class="detail-pw">${'•'.repeat(20)}</span>
           <button class="pw-toggle" onclick="togglePw(this, '${escAttr(ssh.privateKey)}')">👁</button>
@@ -1191,7 +1206,7 @@ function openDetailDrawer(cipher) {
 
   // ── Section: Password History ──
   if (d.passwordHistory && d.passwordHistory.length > 0) {
-    html += `<div class="detail-section"><div class="detail-section-title">🕐 密码历史 (${d.passwordHistory.length})</div>`;
+    html += `<div class="detail-section"><div class="detail-section-title">🕐 ${t('detail.password.history')} (${d.passwordHistory.length})</div>`;
     d.passwordHistory.forEach((ph, idx) => {
       const pw = ph.password || '';
       const date = ph.lastUsedDate ? new Date(ph.lastUsedDate).toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') : '';
@@ -1238,8 +1253,8 @@ function openDetailDrawer(cipher) {
   const isCorrupted = d.error || !d.name;
   if (isCorrupted) {
     html += `<div class="detail-actions detail-diag-actions" style="margin-top:4px;gap:8px">
-      <button class="detail-diag-btn" id="detail-log-btn">📋 解密日志</button>
-      <button class="detail-diag-btn detail-refetch-btn" id="detail-refetch-btn">🔄 重新获取</button>
+      <button class="detail-diag-btn" id="detail-log-btn">${t('detail.diag.log')}</button>
+      <button class="detail-diag-btn detail-refetch-btn" id="detail-refetch-btn">${t('detail.diag.refetch')}</button>
     </div>`;
   }
 
@@ -1271,17 +1286,17 @@ function showDecryptLog(cipher) {
   let html = `<div class="decrypt-log-overlay" id="decrypt-log-overlay">
     <div class="decrypt-log-modal">
       <div class="decrypt-log-header">
-        <span>📋 解密日志 · ${escHtml(cipher.decrypted?.name || '(无标题)')}</span>
+        <span>📋 ${t('log.title')} · ${escHtml(cipher.decrypted?.name || t('item.untitled'))}</span>
         <button class="decrypt-log-close" id="decrypt-log-close">✕</button>
       </div>
       <div class="decrypt-log-summary">
         <span>ID: <code>${cipher.id}</code></span>
-        <span>状态: ${errors.length > 0 ? `<span style="color:#f87171">❌ ${errors.length} 个字段失败</span>` : '<span style="color:#4ade80">✅ 全部成功</span>'}</span>
-        ${errors.length > 0 ? `<span>失败字段: <code>${errors.join(', ')}</code></span>` : ''}
+        <span>${t('log.status')}: ${errors.length > 0 ? `<span style="color:#f87171">❌ ${errors.length} ${t('log.fields.failed')}</span>` : `<span style="color:#4ade80">✅ ${t('log.all.ok')}</span>`}</span>
+        ${errors.length > 0 ? `<span>${t('log.failed.fields')}: <code>${errors.join(', ')}</code></span>` : ''}
       </div>
       <div class="decrypt-log-body">
         <table class="decrypt-log-table">
-          <thead><tr><th>字段</th><th>状态</th><th>详情</th></tr></thead>
+          <thead><tr><th>${t('log.field')}</th><th>${t('log.status')}</th><th>${t('log.detail')}</th></tr></thead>
           <tbody>
             ${log.map(entry => {
               const icon = entry.status === 'ok' ? '✅' : entry.status === 'fail' ? '❌' : entry.status === 'skip' ? '⏭️' : 'ℹ️';
@@ -1290,7 +1305,7 @@ function showDecryptLog(cipher) {
             }).join('')}
           </tbody>
         </table>
-        ${log.length === 0 ? '<div style="padding:16px;text-align:center;color:var(--text-secondary)">无日志数据 (演示模式不产生解密日志)</div>' : ''}
+        ${log.length === 0 ? `<div style="padding:16px;text-align:center;color:var(--text-secondary)">${t('log.empty')}</div>` : ''}
       </div>
     </div>
   </div>`;
@@ -1309,12 +1324,12 @@ function showDecryptLog(cipher) {
  */
 async function refetchSingleCipher(cipher) {
   if (isDemoMode) {
-    showToast('演示模式下不支持重新获取', 'warning');
+    showToast(t('refetch.demo.disabled'), 'warning');
     return;
   }
 
   const btn = $('#detail-refetch-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 获取中...'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('refetch.loading'); }
 
   try {
     // Fetch fresh cipher data from API
@@ -1323,18 +1338,18 @@ async function refetchSingleCipher(cipher) {
     // Re-decrypt with logging
     const logEntries = [];
     const decryptErrors = [];
-    logEntries.push({ field: '⏱ 重新获取时间', status: 'info', detail: new Date().toLocaleString('zh-CN') });
-    logEntries.push({ field: '📡 API 请求', status: 'ok', detail: `成功获取 cipher ${cipher.id.substring(0, 8)}...` });
+    logEntries.push({ field: t('decrypt.refetch.time'), status: 'info', detail: new Date().toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') });
+    logEntries.push({ field: '📡 API Request', status: 'ok', detail: t('decrypt.api.ok', cipher.id.substring(0, 8)) });
 
     // Check if raw data actually has encrypted fields
     if (!freshRaw.Name) {
-      logEntries.push({ field: '⚠️ 原始数据检查', status: 'fail', detail: '云端数据中 Name 字段为空 — 数据可能本身已损坏' });
+      logEntries.push({ field: t('decrypt.raw.check'), status: 'fail', detail: t('decrypt.name.empty') });
     } else {
-      logEntries.push({ field: '⚠️ 原始数据检查', status: 'ok', detail: `Name 字段存在 (${freshRaw.Name.substring(0, 40)}...)` });
+      logEntries.push({ field: t('decrypt.raw.check'), status: 'ok', detail: t('decrypt.name.exists', freshRaw.Name.substring(0, 40)) });
     }
 
-    const rawName = await decryptFieldWithRetry(freshRaw.Name, symmetricKey, 5, logEntries, '名称 (Name)');
-    const rawNotes = await decryptFieldWithRetry(freshRaw.Notes, symmetricKey, 5, logEntries, '备注 (Notes)');
+    const rawName = await decryptFieldWithRetry(freshRaw.Name, symmetricKey, 5, logEntries, 'Name');
+    const rawNotes = await decryptFieldWithRetry(freshRaw.Notes, symmetricKey, 5, logEntries, 'Notes');
     if (fieldFailed(rawName)) decryptErrors.push('name');
     if (fieldFailed(rawNotes)) decryptErrors.push('notes');
 
@@ -1345,8 +1360,8 @@ async function refetchSingleCipher(cipher) {
 
     // Login type
     if (freshRaw.Type === 1 && freshRaw.Login) {
-      const rawUsername = await decryptFieldWithRetry(freshRaw.Login.Username, symmetricKey, 5, logEntries, '用户名 (Username)');
-      const rawPassword = await decryptFieldWithRetry(freshRaw.Login.Password, symmetricKey, 5, logEntries, '密码 (Password)');
+      const rawUsername = await decryptFieldWithRetry(freshRaw.Login.Username, symmetricKey, 5, logEntries, 'Username');
+      const rawPassword = await decryptFieldWithRetry(freshRaw.Login.Password, symmetricKey, 5, logEntries, 'Password');
       const rawTotp = await decryptFieldWithRetry(freshRaw.Login.Totp, symmetricKey, 5, logEntries, 'TOTP');
       if (fieldFailed(rawUsername)) decryptErrors.push('username');
       if (fieldFailed(rawPassword)) decryptErrors.push('password');
@@ -1370,8 +1385,8 @@ async function refetchSingleCipher(cipher) {
       cipher.decrypted.fields = [];
       for (let i = 0; i < freshRaw.Fields.length; i++) {
         const f = freshRaw.Fields[i];
-        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
-        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey, 5, logEntries, `自定义字段[${i + 1}].值`);
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, symmetricKey, 5, logEntries, `Custom field[${i + 1}].label`);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, symmetricKey, 5, logEntries, `Custom field[${i + 1}].value`);
         if (fieldFailed(rawFName)) decryptErrors.push('field.name');
         if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
         const fieldType = f.Type ?? f.type ?? 0;
@@ -1398,17 +1413,17 @@ async function refetchSingleCipher(cipher) {
     openDetailDrawer(cipher);
 
     if (decryptErrors.length > 0) {
-      showToast(`重新获取完成，仍有 ${decryptErrors.length} 个字段解密失败`, 'warning');
+      showToast(t('refetch.done.with.fail', decryptErrors.length), 'warning');
     } else {
-      showToast('🎉 重新获取并解密成功！条目已恢复', 'success');
+      showToast(t('refetch.done.ok'), 'success');
       // Refresh corrupted view
       if (currentView === 'corrupted') renderCorruptedView();
     }
   } catch (err) {
     console.error('[Refetch] Failed:', err);
-    showToast(`获取失败: ${err.message}`, 'error');
+    showToast(`${t('refetch.fail')}: ${err.message}`, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 重新获取'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('detail.diag.refetch'); }
   }
 }
 
@@ -1516,33 +1531,33 @@ function openEditDrawer(cipher) {
   if (cipher.type === 3) {
     const card = d.card || {};
     const brandOptions = ['', 'Visa', 'Mastercard', 'Amex', 'Discover', 'Diners Club', 'JCB', 'Maestro', 'UnionPay', 'RuPay', 'Other']
-      .map(b => `<option value="${b}" ${(card.brand || '') === b ? 'selected' : ''}>${b || '— 无 —'}</option>`).join('');
+      .map(b => `<option value="${b}" ${(card.brand || '') === b ? 'selected' : ''}>${b || t('edit.none')}</option>`).join('');
     html += `<div class="edit-section">
-      <div class="edit-section-title">💳 支付卡信息</div>
+      <div class="edit-section-title">${t('edit.section.card')}</div>
       <div class="edit-field">
-        <label>持卡人姓名</label>
+        <label>${t('edit.card.holder')}</label>
         <input type="text" id="edit-card-cardholderName" value="${escAttr(card.cardholderName || '')}">
       </div>
       <div class="edit-field">
-        <label>卡号</label>
+        <label>${t('edit.card.number')}</label>
         <input type="text" id="edit-card-number" value="${escAttr(card.number || '')}" placeholder="1234 5678 9012 3456">
       </div>
       <div class="edit-field" style="display:flex;gap:12px">
         <div style="flex:1">
-          <label>到期月</label>
+          <label>${t('edit.card.exp.month')}</label>
           <input type="text" id="edit-card-expMonth" value="${escAttr(card.expMonth || '')}" placeholder="MM">
         </div>
         <div style="flex:1">
-          <label>到期年</label>
+          <label>${t('edit.card.exp.year')}</label>
           <input type="text" id="edit-card-expYear" value="${escAttr(card.expYear || '')}" placeholder="YYYY">
         </div>
       </div>
       <div class="edit-field">
-        <label>安全码 (CVV)</label>
+        <label>${t('edit.card.cvv')}</label>
         <input type="password" id="edit-card-code" value="${escAttr(card.code || '')}">
       </div>
       <div class="edit-field">
-        <label>品牌</label>
+        <label>${t('edit.card.brand')}</label>
         <select id="edit-card-brand">${brandOptions}</select>
       </div>
     </div>`;
@@ -1552,54 +1567,54 @@ function openEditDrawer(cipher) {
   if (cipher.type === 4) {
     const id = d.identity || {};
     const titleOptions = [
-      { v: '', l: '— 无 —' }, { v: 'Mr', l: 'Mr' }, { v: 'Mrs', l: 'Mrs' },
+      { v: '', l: t('edit.none') }, { v: 'Mr', l: 'Mr' }, { v: 'Mrs', l: 'Mrs' },
       { v: 'Ms', l: 'Ms' }, { v: 'Mx', l: 'Mx' }, { v: 'Dr', l: 'Dr' }
     ].map(o => `<option value="${o.v}" ${(id.title || '') === o.v ? 'selected' : ''}>${o.l}</option>`).join('');
 
     html += `<div class="edit-section">
-      <div class="edit-section-title">🪪 身份信息</div>
+      <div class="edit-section-title">${t('edit.section.identity')}</div>
       <div class="edit-field">
-        <label>称谓</label>
+        <label>${t('edit.id.title')}</label>
         <select id="edit-id-title">${titleOptions}</select>
       </div>
       <div class="edit-field" style="display:flex;gap:12px">
-        <div style="flex:1"><label>名</label><input type="text" id="edit-id-firstName" value="${escAttr(id.firstName || '')}"></div>
-        <div style="flex:1"><label>中间名</label><input type="text" id="edit-id-middleName" value="${escAttr(id.middleName || '')}"></div>
-        <div style="flex:1"><label>姓</label><input type="text" id="edit-id-lastName" value="${escAttr(id.lastName || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.first')}</label><input type="text" id="edit-id-firstName" value="${escAttr(id.firstName || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.middle')}</label><input type="text" id="edit-id-middleName" value="${escAttr(id.middleName || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.last')}</label><input type="text" id="edit-id-lastName" value="${escAttr(id.lastName || '')}"></div>
       </div>
       <div class="edit-field">
-        <label>用户名</label>
+        <label>${t('edit.id.username')}</label>
         <input type="text" id="edit-id-username" value="${escAttr(id.username || '')}">
       </div>
       <div class="edit-field">
-        <label>公司</label>
+        <label>${t('edit.id.company')}</label>
         <input type="text" id="edit-id-company" value="${escAttr(id.company || '')}">
       </div>
       <div class="edit-field" style="display:flex;gap:12px">
-        <div style="flex:1"><label>邮箱</label><input type="email" id="edit-id-email" value="${escAttr(id.email || '')}"></div>
-        <div style="flex:1"><label>电话</label><input type="tel" id="edit-id-phone" value="${escAttr(id.phone || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.email')}</label><input type="email" id="edit-id-email" value="${escAttr(id.email || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.phone')}</label><input type="tel" id="edit-id-phone" value="${escAttr(id.phone || '')}"></div>
       </div>
       <div class="edit-field" style="display:flex;gap:12px">
-        <div style="flex:1"><label>社会安全号</label><input type="text" id="edit-id-ssn" value="${escAttr(id.ssn || '')}"></div>
-        <div style="flex:1"><label>护照号</label><input type="text" id="edit-id-passportNumber" value="${escAttr(id.passportNumber || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.ssn')}</label><input type="text" id="edit-id-ssn" value="${escAttr(id.ssn || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.passport')}</label><input type="text" id="edit-id-passportNumber" value="${escAttr(id.passportNumber || '')}"></div>
       </div>
       <div class="edit-field">
-        <label>驾照号</label>
+        <label>${t('edit.id.license')}</label>
         <input type="text" id="edit-id-licenseNumber" value="${escAttr(id.licenseNumber || '')}">
       </div>
     </div>
     <div class="edit-section">
-      <div class="edit-section-title">📍 地址</div>
-      <div class="edit-field"><label>地址 1</label><input type="text" id="edit-id-address1" value="${escAttr(id.address1 || '')}"></div>
-      <div class="edit-field"><label>地址 2</label><input type="text" id="edit-id-address2" value="${escAttr(id.address2 || '')}"></div>
-      <div class="edit-field"><label>地址 3</label><input type="text" id="edit-id-address3" value="${escAttr(id.address3 || '')}"></div>
+      <div class="edit-section-title">${t('edit.section.address')}</div>
+      <div class="edit-field"><label>${t('edit.id.address1')}</label><input type="text" id="edit-id-address1" value="${escAttr(id.address1 || '')}"></div>
+      <div class="edit-field"><label>${t('edit.id.address2')}</label><input type="text" id="edit-id-address2" value="${escAttr(id.address2 || '')}"></div>
+      <div class="edit-field"><label>${t('edit.id.address3')}</label><input type="text" id="edit-id-address3" value="${escAttr(id.address3 || '')}"></div>
       <div class="edit-field" style="display:flex;gap:12px">
-        <div style="flex:1"><label>城市</label><input type="text" id="edit-id-city" value="${escAttr(id.city || '')}"></div>
-        <div style="flex:1"><label>州/省</label><input type="text" id="edit-id-state" value="${escAttr(id.state || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.city')}</label><input type="text" id="edit-id-city" value="${escAttr(id.city || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.state')}</label><input type="text" id="edit-id-state" value="${escAttr(id.state || '')}"></div>
       </div>
       <div class="edit-field" style="display:flex;gap:12px">
-        <div style="flex:1"><label>邮编</label><input type="text" id="edit-id-postalCode" value="${escAttr(id.postalCode || '')}"></div>
-        <div style="flex:1"><label>国家</label><input type="text" id="edit-id-country" value="${escAttr(id.country || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.postal')}</label><input type="text" id="edit-id-postalCode" value="${escAttr(id.postalCode || '')}"></div>
+        <div style="flex:1"><label>${t('edit.id.country')}</label><input type="text" id="edit-id-country" value="${escAttr(id.country || '')}"></div>
       </div>
     </div>`;
   }
@@ -1608,17 +1623,17 @@ function openEditDrawer(cipher) {
   if (cipher.type === 5) {
     const ssh = d.sshKey || {};
     html += `<div class="edit-section">
-      <div class="edit-section-title">🔑 SSH 密钥</div>
+      <div class="edit-section-title">${t('edit.section.ssh')}</div>
       <div class="edit-field">
-        <label>公钥</label>
+        <label>${t('detail.ssh.public')}</label>
         <textarea id="edit-ssh-publicKey" rows="3" style="font-family:monospace;font-size:0.82rem">${escHtml(ssh.publicKey || '')}</textarea>
       </div>
       <div class="edit-field">
-        <label>私钥</label>
+        <label>${t('detail.ssh.private')}</label>
         <textarea id="edit-ssh-privateKey" rows="5" style="font-family:monospace;font-size:0.82rem">${escHtml(ssh.privateKey || '')}</textarea>
       </div>
       <div class="edit-field">
-        <label>指纹</label>
+        <label>${t('detail.ssh.fingerprint')}</label>
         <input type="text" id="edit-ssh-keyFingerprint" value="${escAttr(ssh.keyFingerprint || '')}" style="font-family:monospace">
       </div>
     </div>`;
@@ -1633,7 +1648,7 @@ function openEditDrawer(cipher) {
     </div>
     <div class="edit-field" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="edit-favorite" ${d.favorite ? 'checked' : ''}>
-      <label for="edit-favorite" style="margin:0;text-transform:none;font-size:0.88rem">⭐ 收藏</label>
+      <label for="edit-favorite" style="margin:0;text-transform:none;font-size:0.88rem">${t('edit.favorite')}</label>
     </div>
     <div class="edit-field" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="edit-reprompt" ${d.reprompt === 1 ? 'checked' : ''}>
@@ -1642,7 +1657,7 @@ function openEditDrawer(cipher) {
   </div>`;
 
   // ── Custom Fields (4 types: 0=text, 1=hidden, 2=boolean, 3=linked) ──
-  const fieldTypeLabel = { 0: t('detail.type.unknown') === 'Unknown' ? 'Text' : '文本型', 1: getLocale() === 'en' ? 'Hidden' : '隐藏型', 2: getLocale() === 'en' ? 'Boolean' : '复选框型', 3: getLocale() === 'en' ? 'Linked' : '链接型' };
+  const fieldTypeLabel = { 0: t('edit.field.text'), 1: t('edit.field.hidden'), 2: t('edit.field.boolean'), 3: t('edit.field.linked') };
   function buildFieldRow(f = { name: '', value: '', type: 0 }, idx = 0) {
     const typeOptions = [0,1,2,3].map(t =>
       `<option value="${t}" ${f.type === t ? 'selected' : ''}>${fieldTypeLabel[t]}</option>`
@@ -1650,15 +1665,15 @@ function openEditDrawer(cipher) {
     let valueHtml = '';
     if (f.type === 2) {
       // Boolean → checkbox
-      valueHtml = `<label class="cf-checkbox-wrap"><input type="checkbox" class="edit-field-value" ${f.value === 'true' ? 'checked' : ''} data-field-type="2"><span>${getLocale() === 'en' ? 'Enabled' : '已启用'}</span></label>`;
+      valueHtml = `<label class="cf-checkbox-wrap"><input type="checkbox" class="edit-field-value" ${f.value === 'true' ? 'checked' : ''} data-field-type="2"><span>${t('edit.field.enabled')}</span></label>`;
     } else {
       const inputType = f.type === 1 ? 'password' : 'text';
-      const placeholder = f.type === 3 ? (getLocale() === 'en' ? 'html ID, name, aria-label, or placeholder' : 'html ID、名称、aria-label 或占位符') : (getLocale() === 'en' ? 'Value' : '值');
+      const placeholder = f.type === 3 ? t('edit.field.placeholder.linked') : t('edit.field.placeholder.value');
       valueHtml = `<input type="${inputType}" class="edit-field-value" value="${escAttr(f.value || '')}" placeholder="${placeholder}" data-field-type="${f.type}">`;
     }
     return `<div class="custom-field-row" data-idx="${idx}">
       <div class="cf-name-type">
-        <input type="text" class="edit-field-name" value="${escAttr(f.name || '')}" placeholder="${getLocale() === 'en' ? 'Field label' : '字段标签'}">
+        <input type="text" class="edit-field-name" value="${escAttr(f.name || '')}" placeholder="${t('edit.field.placeholder.name')}">
         <select class="edit-field-type">${typeOptions}</select>
       </div>
       <div class="cf-value-action">
@@ -1672,7 +1687,7 @@ function openEditDrawer(cipher) {
     <div id="edit-fields-container">
       ${fields.map((f, i) => buildFieldRow(f, i)).join('')}
     </div>
-    <button class="add-btn" type="button" id="add-field-btn">${getLocale() === 'en' ? '+ Add Field' : '＋ 添加字段'}</button>
+    <button class="add-btn" type="button" id="add-field-btn">${t('edit.field.add')}</button>
   </div>`;
 
   // ── Passkeys (read-only info) ──
@@ -1680,7 +1695,7 @@ function openEditDrawer(cipher) {
   if (passkeys.length > 0) {
     html += `<div class="edit-section">
       <div class="edit-section-title">${t('detail.passkey')}</div>
-      <div class="detail-field"><div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length}${t('detail.passkey.count')} ${getLocale() === 'en' ? '(read-only)' : '（不可编辑）'}</span></div></div>
+      <div class="detail-field"><div class="detail-value"><span class="has-passkey">🔑 ${passkeys.length}${t('detail.passkey.count')} ${t('edit.passkey.readonly')}</span></div></div>
     </div>`;
   }
 
@@ -1728,13 +1743,13 @@ function openEditDrawer(cipher) {
       if (t === 2) {
         const label = document.createElement('label');
         label.className = 'cf-checkbox-wrap';
-        label.innerHTML = `<input type="checkbox" class="edit-field-value" data-field-type="2"><span>${getLocale() === 'en' ? 'Enabled' : '已启用'}</span>`;
+        label.innerHTML = `<input type="checkbox" class="edit-field-value" data-field-type="2"><span>${t('edit.field.enabled')}</span>`;
         newEl = label;
       } else {
         newEl = document.createElement('input');
         newEl.type = t === 1 ? 'password' : 'text';
         newEl.className = 'edit-field-value';
-        newEl.placeholder = t === 3 ? 'html ID、名称、aria-label 或占位符' : '值';
+        newEl.placeholder = t === 3 ? t('edit.field.placeholder.linked') : t('edit.field.placeholder.value');
         newEl.dataset.fieldType = String(t);
       }
       oldVal?.remove();
@@ -1762,7 +1777,6 @@ function openEditDrawer(cipher) {
 // CREATE NEW ITEM DRAWER
 // ========================
 function openCreateDrawer(typeId) {
-  const typeNames = { 1: '登录', 2: '安全笔记', 3: '支付卡', 4: '身份', 5: 'SSH 密钥' };
   // Build a fake cipher shell so we can reuse openEditDrawer's form
   const fakeCipher = {
     id: null,
@@ -1785,7 +1799,7 @@ function openCreateDrawer(typeId) {
   openEditDrawer(fakeCipher);
 
   // Override title
-  $('#detail-title').textContent = `✨ 新建${typeNames[typeId] || '条目'}`;
+  $('#detail-title').textContent = `${t('edit.create.prefix')}${typeName(typeId)}`;
 
   // Override save to call createCipher instead of updateCipher
   const saveBtn = $('#edit-save-btn');
@@ -1802,14 +1816,14 @@ function openCreateDrawer(typeId) {
 async function saveNewCipher(fakeCipher, typeId) {
   const saveBtn = $('#edit-save-btn');
   saveBtn.disabled = true;
-  saveBtn.textContent = '创建中…';
+  saveBtn.textContent = t('edit.creating');
 
   try {
     const name = $('#edit-name')?.value?.trim() || '';
     if (!name) {
-      showToast('❌ 名称不能为空', 'error');
+      showToast(t('edit.name.required'), 'error');
       saveBtn.disabled = false;
-      saveBtn.textContent = '💾 保存';
+      saveBtn.textContent = t('edit.save.short');
       return;
     }
 
@@ -1837,7 +1851,7 @@ async function saveNewCipher(fakeCipher, typeId) {
       }
 
       allDecryptedCiphers.push(newCipher);
-      showToast('✅ 条目已创建', 'success');
+      showToast(t('edit.created.ok'), 'success');
       closeDetailDrawer();
       switchView(currentView);
       updateSidebarBadges();
@@ -1931,23 +1945,23 @@ async function saveNewCipher(fakeCipher, typeId) {
       payload.Fields = payload.fields = encFields;
     }
 
-    showToast('✅ 条目已创建', 'success');
+    showToast(t('edit.created.ok'), 'success');
     closeDetailDrawer();
 
     await client.createCipher(payload);
     await resyncVault();
   } catch (err) {
     console.error('Create error:', err);
-    showToast(`❌ 创建失败: ${err.message}`, 'error');
+    showToast(`${t('edit.create.fail')}: ${err.message}`, 'error');
     saveBtn.disabled = false;
-    saveBtn.textContent = '💾 保存';
+    saveBtn.textContent = t('edit.save.short');
   }
 }
 
 async function saveEditedCipher(cipher) {
   const saveBtn = $('#edit-save-btn');
   saveBtn.disabled = true;
-  saveBtn.textContent = '保存中...';
+  saveBtn.textContent = t('edit.saving');
 
   // Demo mode: save plaintext directly to in-memory object
   if (isDemoMode) {
@@ -2016,13 +2030,13 @@ async function saveEditedCipher(cipher) {
       });
       cipher.raw.Fields = cipher.decrypted.fields.map(f => ({ Name: f.name, Value: f.value, Type: f.type }));
 
-      showToast('✅ 条目已保存', 'success');
+      showToast(t('edit.saved.ok'), 'success');
       closeDetailDrawer();
       await resyncVault();
     } catch (err) {
-      showToast(`❌ 保存失败: ${err.message}`, 'error');
+      showToast(`${t('detail.save.fail')}: ${err.message}`, 'error');
       saveBtn.disabled = false;
-      saveBtn.textContent = '💾 保存';
+      saveBtn.textContent = t('edit.save.short');
     }
     return;
   }
@@ -2166,7 +2180,7 @@ async function saveEditedCipher(cipher) {
     // ── Phase 1: 乐观热更新 ── 立即从 dead URL 列表移除并关闭编辑器 ──
     const editedId = cipher.id;
     deadUrlItems = deadUrlItems.filter(c => c.id !== editedId);
-    showToast('✅ 条目已保存', 'success');
+    showToast(t('edit.saved.ok'), 'success');
     closeDetailDrawer();
     updateSidebarBadges();
     if (currentView === 'dead-urls') renderDeadUrlsView();
@@ -2275,11 +2289,11 @@ async function saveEditedCipher(cipher) {
           console.log('[Save] Soft-deleted old cipher:', editedId);
         } catch (delErr) {
           console.warn('[Save] Failed to delete old cipher (duplicate may remain):', delErr.message);
-          showToast('⚠️ 新条目已创建，但旧条目删除失败，请手动删除', 'warning');
+          showToast(t('edit.save.server.old.fail'), 'warning');
         }
       } catch (err) {
         console.error('[Save] Create-then-delete failed:', err);
-        showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
+        showToast(t('server.save.fail.rollback', err.message), 'error');
         await resyncVault();
         return;
       }
@@ -2289,7 +2303,7 @@ async function saveEditedCipher(cipher) {
         await client.updateCipher(cipher.id, updated);
       } catch (err) {
         console.error('[Save] Server updateCipher failed:', err);
-        showToast(`❌ 服务端保存失败: ${err.message}，正在回滚…`, 'error');
+        showToast(t('server.save.fail.rollback', err.message), 'error');
         await resyncVault();
         return;
       }
@@ -2299,9 +2313,9 @@ async function saveEditedCipher(cipher) {
     resyncVault();
   } catch (err) {
     console.error('Save error:', err);
-    showToast(`❌ 保存失败: ${err.message}`, 'error');
+    showToast(`${t('detail.save.fail')}: ${err.message}`, 'error');
     saveBtn.disabled = false;
-    saveBtn.textContent = '💾 保存';
+    saveBtn.textContent = t('edit.save.short');
   }
 }
 /**
@@ -2310,8 +2324,8 @@ async function saveEditedCipher(cipher) {
  */
 async function deleteCurrentCipher(cipher) {
   showConfirm(
-    '删除条目',
-    `确认删除「${cipher.decrypted?.name || '(无标题)'}」？\n条目将移入回收站，30天内可恢复。`,
+    t('delete.confirm.title'),
+    t('delete.confirm.msg', cipher.decrypted?.name || t('item.untitled')),
     async () => {
       const deleteId = cipher.id;
 
@@ -2323,14 +2337,14 @@ async function deleteCurrentCipher(cipher) {
       updateSidebarBadges();
       closeDetailDrawer();
       switchView(currentView);
-      showToast('✅ 已删除，已移入回收站', 'success');
+      showToast(t('delete.moved.trash'), 'success');
 
       // ── Phase 2: 后台服务端删除 ──
       try {
         await client.softDeleteBulk([deleteId]);
       } catch (err) {
         console.error('[Delete] Server softDeleteBulk failed:', err);
-        showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+        showToast(t('server.delete.fail.rollback', err.message), 'error');
         await resyncVault();
         return;
       }
@@ -2382,7 +2396,7 @@ function showMergeProgress() {
   const bar = $('#merge-progress-bar');
   const text = $('#merge-progress-text');
   bar.style.width = '0%';
-  text.textContent = '准备中...';
+  text.textContent = t('merge.progress.ready');
   overlay.style.display = 'flex';
 }
 
@@ -2405,14 +2419,14 @@ function showMergeReport(successGroups, successDeletes, failures) {
   const closeBtn = $('#merge-report-close');
 
   const hasFails = failures.length > 0;
-  title.textContent = hasFails ? '⚠️ 合并完成（部分失败）' : '✅ 合并全部成功';
+  title.textContent = hasFails ? t('merge.report.partial') : t('merge.report.all.ok');
 
   let html = '<div class="report-summary">';
-  html += `<div><span class="success">✅ 成功合并:</span> ${successGroups} 组`;
-  if (successDeletes > 0) html += `，删除 ${successDeletes} 条`;
+  html += `<div><span class="success">${t('merge.report.success')}</span> ${successGroups} ${t('dup.groups')}`;
+  if (successDeletes > 0) html += t('merge.report.deleted', successDeletes);
   html += '</div>';
   if (hasFails) {
-    html += `<div><span class="fail">❌ 失败:</span> ${failures.length} 项</div>`;
+    html += `<div><span class="fail">${t('merge.report.failed')}</span> ${failures.length} ${t('dup.items')}</div>`;
   }
   html += '</div>';
 
@@ -2449,14 +2463,14 @@ function escapeHtml(str) {
  */
 async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5, logEntries = null, fieldLabel = '') {
   if (!cipherString) {
-    if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'skip', detail: '字段为空' });
+    if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'skip', detail: t('decrypt.empty.field') });
     return null;
   }
   let lastErr = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await decryptToString(cipherString, keys);
-      if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'ok', detail: `解密成功 (尝试 ${attempt + 1}/${maxRetries})` });
+      if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'ok', detail: t('decrypt.ok.attempt', attempt + 1, maxRetries) });
       return result;
     } catch (err) {
       lastErr = err;
@@ -2467,7 +2481,7 @@ async function decryptFieldWithRetry(cipherString, keys, maxRetries = 5, logEntr
   }
   const errMsg = lastErr?.message || 'Unknown error';
   console.debug(`Field decrypt failed after ${maxRetries} retries:`, errMsg);
-  if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'fail', detail: `${maxRetries}次重试后失败: ${errMsg}` });
+  if (logEntries && fieldLabel) logEntries.push({ field: fieldLabel, status: 'fail', detail: t('decrypt.failed.after', maxRetries, errMsg) });
   return { __decryptFailed: true, error: errMsg };
 }
 
@@ -2495,7 +2509,7 @@ async function decryptAllCiphers(syncData) {
   for (const cipher of ciphers) {
     const decryptErrors = [];
     const logEntries = []; // Detailed per-field log
-    logEntries.push({ field: '⏱ 时间', status: 'info', detail: new Date().toLocaleString('zh-CN') });
+    logEntries.push({ field: t('decrypt.time'), status: 'info', detail: new Date().toLocaleString(getLocale() === 'zh' ? 'zh-CN' : 'en-US') });
 
     // Determine the correct decryption key for this cipher
     // Items with a per-cipher Key (e.g. Passkey items) are encrypted with their own key
@@ -2504,17 +2518,17 @@ async function decryptAllCiphers(syncData) {
     if (cipherKeyStr) {
       try {
         itemKey = await decryptSymmetricKey(cipherKeyStr, symmetricKey);
-        logEntries.push({ field: '🔑 Cipher Key', status: 'ok', detail: '已解密 per-cipher 密钥' });
+        logEntries.push({ field: '🔑 Cipher Key', status: 'ok', detail: t('decrypt.cipher.key.ok') });
       } catch (err) {
         console.debug('[Decrypt] Failed to decrypt per-cipher Key:', err.message);
-        logEntries.push({ field: '🔑 Cipher Key', status: 'fail', detail: `per-cipher 密钥解密失败: ${err.message}，回退到主密钥` });
+        logEntries.push({ field: '🔑 Cipher Key', status: 'fail', detail: t('decrypt.cipher.key.fail', err.message) });
         // Fall back to master key — may still fail for individual fields
       }
     }
 
     // Decrypt each field independently — partial success is OK
-    const rawName = await decryptFieldWithRetry(cipher.Name, itemKey, 5, logEntries, '名称 (Name)');
-    const rawNotes = await decryptFieldWithRetry(cipher.Notes, itemKey, 5, logEntries, '备注 (Notes)');
+    const rawName = await decryptFieldWithRetry(cipher.Name, itemKey, 5, logEntries, 'Name');
+    const rawNotes = await decryptFieldWithRetry(cipher.Notes, itemKey, 5, logEntries, 'Notes');
 
     if (fieldFailed(rawName)) decryptErrors.push('name');
     if (fieldFailed(rawNotes)) decryptErrors.push('notes');
@@ -2535,8 +2549,8 @@ async function decryptAllCiphers(syncData) {
 
     // Login type
     if (cipher.Type === 1 && cipher.Login) {
-      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, itemKey, 5, logEntries, '用户名 (Username)');
-      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, itemKey, 5, logEntries, '密码 (Password)');
+      const rawUsername = await decryptFieldWithRetry(cipher.Login.Username, itemKey, 5, logEntries, 'Username');
+      const rawPassword = await decryptFieldWithRetry(cipher.Login.Password, itemKey, 5, logEntries, 'Password');
       const rawTotp = await decryptFieldWithRetry(cipher.Login.Totp, itemKey, 5, logEntries, 'TOTP');
 
       if (fieldFailed(rawUsername)) decryptErrors.push('username');
@@ -2562,16 +2576,16 @@ async function decryptAllCiphers(syncData) {
     if (cipher.Type === 3 && cipher.Card) {
       const card = cipher.Card;
       const cardFieldMap = {
-        cardholderName: ['持卡人', card.CardholderName || card.cardholderName],
-        number: ['卡号', card.Number || card.number],
-        expMonth: ['过期月', card.ExpMonth || card.expMonth],
-        expYear: ['过期年', card.ExpYear || card.expYear],
-        code: ['安全码', card.Code || card.code],
-        brand: ['品牌', card.Brand || card.brand],
+        cardholderName: ['Cardholder', card.CardholderName || card.cardholderName],
+        number: ['Card number', card.Number || card.number],
+        expMonth: ['Expiry month', card.ExpMonth || card.expMonth],
+        expYear: ['Expiry year', card.ExpYear || card.expYear],
+        code: ['Security code', card.Code || card.code],
+        brand: ['Brand', card.Brand || card.brand],
       };
       item.decrypted.card = {};
       for (const [k, [label, val]] of Object.entries(cardFieldMap)) {
-        const rawVal = await decryptFieldWithRetry(val, itemKey, 5, logEntries, `卡片.${label}`);
+        const rawVal = await decryptFieldWithRetry(val, itemKey, 5, logEntries, `Card.${label}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`card.${k}`);
         item.decrypted.card[k] = fieldValue(rawVal);
       }
@@ -2589,7 +2603,7 @@ async function decryptAllCiphers(syncData) {
       ];
       for (const field of identityFields) {
         const key = field.charAt(0).toLowerCase() + field.slice(1);
-        const rawVal = await decryptFieldWithRetry(id[field] || id[key], itemKey, 5, logEntries, `身份.${field}`);
+        const rawVal = await decryptFieldWithRetry(id[field] || id[key], itemKey, 5, logEntries, `Identity.${field}`);
         if (fieldFailed(rawVal)) decryptErrors.push(`identity.${key}`);
         item.decrypted.identity[key] = fieldValue(rawVal);
       }
@@ -2616,8 +2630,8 @@ async function decryptAllCiphers(syncData) {
       item.decrypted.fields = [];
       for (let i = 0; i < cipher.Fields.length; i++) {
         const f = cipher.Fields[i];
-        const rawFName = await decryptFieldWithRetry(f.Name || f.name, itemKey, 5, logEntries, `自定义字段[${i + 1}].标签`);
-        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, itemKey, 5, logEntries, `自定义字段[${i + 1}].值`);
+        const rawFName = await decryptFieldWithRetry(f.Name || f.name, itemKey, 5, logEntries, `Custom field[${i + 1}].label`);
+        const rawFValue = await decryptFieldWithRetry(f.Value || f.value, itemKey, 5, logEntries, `Custom field[${i + 1}].value`);
         if (fieldFailed(rawFName)) decryptErrors.push('field.name');
         if (fieldFailed(rawFValue)) decryptErrors.push('field.value');
         const fieldType = f.Type ?? f.type ?? 0;
@@ -2630,7 +2644,7 @@ async function decryptAllCiphers(syncData) {
       item.decrypted.passwordHistory = [];
       for (let i = 0; i < cipher.PasswordHistory.length; i++) {
         const ph = cipher.PasswordHistory[i];
-        const rawPw = await decryptFieldWithRetry(ph.Password || ph.password, itemKey, 5, logEntries, `密码历史[${i + 1}]`);
+        const rawPw = await decryptFieldWithRetry(ph.Password || ph.password, itemKey, 5, logEntries, `Password history[${i + 1}]`);
         if (fieldFailed(rawPw)) decryptErrors.push('passwordHistory');
         item.decrypted.passwordHistory.push({
           password: fieldValue(rawPw),
@@ -2688,9 +2702,9 @@ async function resyncVault() {
   if (vaultData.Folders) {
     for (const f of vaultData.Folders) {
       try {
-        folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || '(未命名)';
+        folderMap[f.Id] = await decryptToString(f.Name, symmetricKey) || t('item.unnamed.folder');
       } catch {
-        folderMap[f.Id] = '(解密失败)';
+        folderMap[f.Id] = t('item.decrypt.fail');
       }
     }
   }
@@ -2709,15 +2723,15 @@ function setupSyncButton() {
   btn.addEventListener('click', async () => {
     if (btn.classList.contains('syncing')) return;
     btn.classList.add('syncing');
-    btn.querySelector('span').textContent = '同步中…';
+    btn.querySelector('span').textContent = t('syncing.label');
     try {
       await resyncVault();
-      showToast('✅ 密码库已同步', 'success');
+      showToast(t('sync.vault.ok'), 'success');
     } catch (err) {
-      showToast(`❌ 同步失败: ${err.message}`, 'error');
+      showToast(`${t('toast.sync.fail')}: ${err.message}`, 'error');
     } finally {
       btn.classList.remove('syncing');
-      btn.querySelector('span').textContent = '同步';
+      btn.querySelector('span').textContent = t('sync.label');
     }
   });
 }
@@ -2772,7 +2786,7 @@ function renderOverview() {
             <span class="issue-count">${i.count}</span>
             <span>${i.label}</span>
           </div>
-        `).join('') || `<div class="health-issue-row" style="color:var(--success)">🎉 ${getLocale() === 'en' ? 'Your vault is very healthy!' : '你的保险库非常健康！'}</div>`}
+        `).join('') || `<div class="health-issue-row" style="color:var(--success)">${t('health.empty')}</div>`}
       </div>
     </div>
 
@@ -2795,7 +2809,7 @@ function renderOverview() {
       </div>
       <div class="stat-card clickable" id="ov-nofolder">
         <div class="stat-number">${stats.noFolderItems || 0}</div>
-        <div class="stat-label">${getLocale() === 'en' ? 'No Folder' : '无文件夹'}</div>
+        <div class="stat-label">${t('item.no.folder')}</div>
       </div>
     </div>
 
@@ -2973,8 +2987,8 @@ function renderDuplicatesView() {
     <div class="merge-bar" id="merge-bar">
       <span id="merge-count"></span>
       <div class="merge-bar-actions">
-        <button id="dup-batch-move-btn" class="merge-bar-btn" title="移动到文件夹">📁 ${t('folder.move')}</button>
-        <button id="dup-batch-delete-btn" class="merge-bar-btn merge-bar-btn-danger" title="批量删除">🗑️ ${t('detail.btn.delete')}</button>
+        <button id="dup-batch-move-btn" class="merge-bar-btn" title="${t('folder.move')}">📁 ${t('folder.move')}</button>
+        <button id="dup-batch-delete-btn" class="merge-bar-btn merge-bar-btn-danger" title="${t('batch.delete.title')}">🗑️ ${t('detail.btn.delete')}</button>
         <button id="merge-btn" class="merge-btn">${t('dup.merge.btn')}</button>
       </div>
     </div>
@@ -3027,7 +3041,7 @@ function renderDuplicatesView() {
   // Batch delete selected items in duplicates view
   $('#dup-batch-delete-btn')?.addEventListener('click', () => {
     const ids = getDupSelectedItemIds();
-    if (ids.length === 0) { showToast('请先勾选要删除的条目', 'warning'); return; }
+    if (ids.length === 0) { showToast(t('dup.select.delete.first'), 'warning'); return; }
     showConfirm(
       t('batch.delete.title'),
       `${t('modal.confirm')} ${ids.length} ${t('batch.delete.msg')}`,
@@ -3050,7 +3064,7 @@ function renderDuplicatesView() {
             }
           } catch (err) {
             console.error('[Delete] Server softDeleteBulk failed:', err);
-            showToast(`❌ 服务端删除失败: ${err.message}，正在回滚…`, 'error');
+            showToast(t('server.delete.fail.rollback', err.message), 'error');
             await resyncVault();
             return;
           }
@@ -3062,7 +3076,7 @@ function renderDuplicatesView() {
   // Batch move selected items in duplicates view
   $('#dup-batch-move-btn')?.addEventListener('click', () => {
     const ids = getDupSelectedItemIds();
-    if (ids.length === 0) { showToast('请先勾选要移动的条目', 'warning'); return; }
+    if (ids.length === 0) { showToast(t('dup.select.move.first'), 'warning'); return; }
     // Temporarily set selectedItems so showMoveFolderModal works
     const savedSelection = new Set(selectedItems);
     selectedItems.clear();
@@ -3215,7 +3229,7 @@ function renderCorruptedView() {
   const corrupted = allDecryptedCiphers.filter(c => c.decrypted?.error || !c.decrypted?.name);
 
   if (corrupted.length === 0) {
-    container.innerHTML = '<div class="empty-state">✅ 未发现损坏条目</div>';
+    container.innerHTML = `<div class="empty-state">${t('corrupted.empty')}</div>`;
     return;
   }
 
@@ -3225,7 +3239,7 @@ function renderCorruptedView() {
   }
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的损坏条目</div>';
+    container.innerHTML = `<div class="empty-state">${t('corrupted.search.empty')}</div>`;
     return;
   }
 
@@ -3238,11 +3252,11 @@ function renderCorruptedView() {
           <input type="checkbox" id="corrupted-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        💀 已损坏条目 · ${filtered.length} 项
+        ${t('corrupted.title')} · ${filtered.length} ${t('dup.items')}
       </span>
     </div>
     <div class="corrupted-hint" style="padding:4px 16px 12px;font-size:0.82rem;color:var(--text-secondary)">
-      包含解密失败和无标题的条目。建议确认后移入回收站。
+      ${t('corrupted.hint')}
     </div>
     ${filtered.map(item => {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
@@ -3251,16 +3265,16 @@ function renderCorruptedView() {
       const reasons = [];
       if (hasError) {
         const errCount = item.decrypted?.decryptErrors?.length || 0;
-        reasons.push(`🔐 解密失败${errCount > 0 ? ` (${errCount}个字段)` : ''}`);
+        reasons.push(`${t('corrupted.reason.decrypt')}${errCount > 0 ? ` (${errCount} ${t('log.fields.failed')})` : ''}`);
       }
-      if (noName && !hasError) reasons.push('📛 无标题');
+      if (noName && !hasError) reasons.push(t('corrupted.reason.untitled'));
       const reasonHtml = reasons.map(r => `<span class="orphan-tag" style="color:#f87171">${r}</span>`).join('');
       const uri = item.decrypted?.uris?.filter(Boolean)?.[0] || '';
       return `
       <div class="orphan-item selectable" data-id="${item.id}">
         <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
         <div class="item-info">
-          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             ${reasonHtml}
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
@@ -3495,7 +3509,7 @@ async function checkDeadUrls() {
       bar.style.width = `${pct}%`;
     }
     const label = document.getElementById('dead-url-progress-label');
-    if (label) label.textContent = `${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} 个域名`;
+    if (label) label.textContent = `${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} ${t('deadurls.progress.domains')}`;
   };
   updateProgress();
   if (currentView === 'dead-urls') renderDeadUrlsView();
@@ -3541,14 +3555,14 @@ function renderDeadUrlsView() {
     container.innerHTML = `
       <div class="empty-state">
         <div style="font-size:2.5rem;margin-bottom:16px">🔗</div>
-        <div style="font-size:1.05rem;font-weight:600;margin-bottom:8px;color:var(--text-primary)">URL 连通性检测</div>
+        <div style="font-size:1.05rem;font-weight:600;margin-bottom:8px;color:var(--text-primary)">${t('deadurls.check.title')}</div>
         <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto;line-height:1.6">
-          扫描所有登录条目的 URL，找出已失效的站点。<br>白名单域名将自动跳过。
+          ${t('deadurls.check.desc')}
         </div>
         <button id="start-dead-url-check-btn" class="btn-primary" style="
           width:auto;padding:12px 32px;border-radius:var(--radius-sm);
           font-size:0.95rem;letter-spacing:0.02em;
-        ">🚀 开始检测</button>
+        ">${t('deadurls.start')}</button>
       </div>`;
     container.querySelector('#start-dead-url-check-btn')?.addEventListener('click', () => {
       checkDeadUrls();
@@ -3563,22 +3577,22 @@ function renderDeadUrlsView() {
     container.innerHTML = `
       <div class="empty-state">
         <div style="font-size:2rem;margin-bottom:12px">🔍</div>
-        <div>正在检测 URL 连通性…</div>
+        <div>${t('deadurls.running')}</div>
         <div style="width:260px;height:8px;background:var(--bg-secondary);border-radius:4px;margin:16px auto 8px;overflow:hidden">
           <div id="dead-url-progress-fill" style="height:100%;background:linear-gradient(90deg,var(--brand),var(--brand-light));border-radius:4px;transition:width 0.3s ease;width:${pct}%"></div>
         </div>
         <div id="dead-url-progress-label" style="font-size:0.82rem;color:var(--text-secondary)">
-          ${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} 个域名
+          ${deadUrlCheckProgress.checked} / ${deadUrlCheckProgress.total} ${t('deadurls.progress.domains')}
         </div>
         <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">
-          白名单域名已跳过，仅检测未知域名
+          ${t('deadurls.whitelist')}
         </div>
       </div>`;
     return;
   }
 
   if (deadUrlItems.length === 0) {
-    container.innerHTML = '<div class="empty-state">✅ 所有 URL 均可正常访问</div>';
+    container.innerHTML = `<div class="empty-state">${t('deadurls.all.ok')}</div>`;
     return;
   }
 
@@ -3588,7 +3602,7 @@ function renderDeadUrlsView() {
   }
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的失效条目</div>';
+    container.innerHTML = `<div class="empty-state">${t('deadurls.search.empty')}</div>`;
     return;
   }
 
@@ -3601,11 +3615,11 @@ function renderDeadUrlsView() {
           <input type="checkbox" id="deadurl-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        🔗 URL 已失效 · ${filtered.length} 项
+        ${t('deadurls.title')} · ${filtered.length} ${t('dup.items')}
       </span>
     </div>
     <div style="padding:4px 16px 12px;font-size:0.82rem;color:var(--text-secondary)">
-      以下条目的 URL 无法访问（DNS 解析失败或连接超时）。建议确认后移入回收站或更新链接。
+      ${t('deadurls.hint')}
     </div>
     ${filtered.map(item => {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
@@ -3614,9 +3628,9 @@ function renderDeadUrlsView() {
       <div class="orphan-item selectable" data-id="${item.id}">
         <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
         <div class="item-info">
-          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
-            <span class="orphan-tag" style="color:var(--danger)">⚠️ 无法访问</span>
+            <span class="orphan-tag" style="color:var(--danger)">${t('deadurls.unreachable')}</span>
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
             ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : ''}
             <span>📁 ${escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'))}</span>
@@ -3660,14 +3674,16 @@ function renderDeadUrlsView() {
 // ========================
 // RENDER: TYPE-FILTERED VIEW (Card, Identity, Note, SSH Key)
 // ========================
-function renderTypeFilteredView(viewName, typeId, title) {
+function renderTypeFilteredView(viewName, typeId) {
   const container = $(`#view-${viewName}`);
   const items = allDecryptedCiphers.filter(c => (c.raw?.Type ?? c.raw?.type) === typeId);
+  const title = typeTitle(typeId);
+  const name = typeName(typeId);
 
   if (items.length === 0) {
-    container.innerHTML = `<div class="empty-state">📭 暂无${title.replace(/^[^\s]+\s/, '')}条目</div>
+    container.innerHTML = `<div class="empty-state">${t('type.empty', name)}</div>
       <div style="text-align:center;margin-top:16px">
-        <button class="btn-primary create-item-btn" data-type="${typeId}" style="padding:10px 28px;border-radius:var(--radius-sm)">＋ 新建${title.replace(/^[^\s]+\s/, '')}</button>
+        <button class="btn-primary create-item-btn" data-type="${typeId}" style="padding:10px 28px;border-radius:var(--radius-sm)">${t('type.new', name)}</button>
       </div>`;
     container.querySelector('.create-item-btn')?.addEventListener('click', () => openCreateDrawer(typeId));
     return;
@@ -3679,7 +3695,7 @@ function renderTypeFilteredView(viewName, typeId, title) {
   }
 
   if (filtered.length === 0) {
-    container.innerHTML = `<div class="empty-state">🔍 未找到匹配的${title.replace(/^[^\s]+\s/, '')}条目</div>`;
+    container.innerHTML = `<div class="empty-state">${t('type.search.empty', name)}</div>`;
     return;
   }
 
@@ -3733,7 +3749,7 @@ function renderTypeFilteredView(viewName, typeId, title) {
 
   const renderItem = (item) => {
     const checked = selectedItems.has(item.id) ? 'checked' : '';
-    const name = escHtml(item.decrypted?.name || '(无标题)');
+    const name = escHtml(item.decrypted?.name || t('item.untitled'));
     const subtitle = getSubtitle(item);
     const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
     const hasPasskey = typeId === 1 && (item.raw?.Login?.Fido2Credentials?.length || 0) > 0;
@@ -3761,9 +3777,9 @@ function renderTypeFilteredView(viewName, typeId, title) {
           <input type="checkbox" id="${viewName}-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        ${title} · ${filtered.length} 项
+        ${title} · ${filtered.length} ${t('dup.items')}
       </span>
-      <button class="btn-primary create-item-btn" data-type="${typeId}">＋ 新建</button>
+      <button class="btn-primary create-item-btn" data-type="${typeId}">${t('type.new.short')}</button>
     </div>
     <div class="all-items-body" style="position:relative">
       ${hasGroups ? `
@@ -3834,7 +3850,7 @@ function renderTypeFilteredView(viewName, typeId, title) {
       else selectedItems.delete(c.id);
     });
     updateBatchBar();
-    renderTypeFilteredView(viewName, typeId, title);
+    renderTypeFilteredView(viewName, typeId);
   });
 
   // Click row to open detail
@@ -3855,7 +3871,7 @@ function renderFavoritesView() {
   const items = allDecryptedCiphers.filter(c => c.raw?.Favorite || c.decrypted?.favorite);
 
   if (items.length === 0) {
-    container.innerHTML = '<div class="empty-state">⭐ 暂无收藏条目<br><small style="color:var(--text-secondary)">在编辑条目时开启「收藏」即可添加到此列表</small></div>';
+    container.innerHTML = `<div class="empty-state">${t('favorites.empty')}<br><small style="color:var(--text-secondary)">${t('favorites.hint')}</small></div>`;
     return;
   }
 
@@ -3865,7 +3881,7 @@ function renderFavoritesView() {
   }
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="empty-state">🔍 未找到匹配的收藏条目</div>';
+    container.innerHTML = `<div class="empty-state">${t('favorites.search.empty')}</div>`;
     return;
   }
 
@@ -3881,24 +3897,24 @@ function renderFavoritesView() {
           <input type="checkbox" id="favorites-select-all-cb" ${allSelected ? 'checked' : ''} />
           ${t('select.all')}
         </label>
-        ⭐ 收藏夹 · ${filtered.length} 项
+        ${t('favorites.title')} · ${filtered.length} ${t('dup.items')}
       </span>
     </div>
     ${filtered.map(item => {
       const checked = selectedItems.has(item.id) ? 'checked' : '';
-      const name = escHtml(item.decrypted?.name || '(无标题)');
+      const name = escHtml(item.decrypted?.name || t('item.untitled'));
       const folder = escHtml(folderMap[item.raw?.FolderId] || t('item.no.folder'));
       const icon = typeIcon(item.type);
       const subtitle = item.type === 1
         ? (item.decrypted?.username ? `👤 ${escHtml(item.decrypted.username)}` : '—')
         : item.type === 3
-        ? (item.decrypted?.card?.brand || '支付卡')
+        ? (item.decrypted?.card?.brand || typeName(3))
         : item.type === 4
-        ? ([item.decrypted?.identity?.firstName, item.decrypted?.identity?.lastName].filter(Boolean).join(' ') || '身份')
+        ? ([item.decrypted?.identity?.firstName, item.decrypted?.identity?.lastName].filter(Boolean).join(' ') || typeName(4))
         : item.type === 2
-        ? (item.decrypted?.notes?.substring(0, 40) || '安全笔记')
+        ? (item.decrypted?.notes?.substring(0, 40) || typeName(2))
         : item.type === 5
-        ? (item.decrypted?.sshKey?.keyFingerprint?.substring(0, 30) || 'SSH 密钥')
+        ? (item.decrypted?.sshKey?.keyFingerprint?.substring(0, 30) || typeName(5))
         : '—';
       return `
       <div class="orphan-item selectable" data-id="${item.id}">
@@ -3959,8 +3975,8 @@ function renderNoFolderView() {
 
   if (filteredItems.length === 0) {
     container.innerHTML = searchQuery.trim()
-      ? '<div class="empty-state">🔍 没有匹配的条目</div>'
-      : '<div class="empty-state">✅ 所有条目都已归类到文件夹。</div>';
+      ? `<div class="empty-state">${t('nofolder.search.empty')}</div>`
+      : `<div class="empty-state">${t('nofolder.empty')}</div>`;
     return;
   }
 
@@ -3986,10 +4002,10 @@ function renderNoFolderView() {
       <div class="orphan-item selectable" data-id="${item.id}">
         <input type="checkbox" class="item-cb" data-id="${item.id}" ${checked} />
         <div class="item-info">
-          <div class="item-name">${escHtml(item.decrypted?.name || '(无标题)')}</div>
+          <div class="item-name">${escHtml(item.decrypted?.name || t('item.untitled'))}</div>
           <div class="item-meta">
             <span>👤 ${escHtml(item.decrypted?.username || '—')}</span>
-            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : '<span class="orphan-tag">无URL</span>'}
+            ${uri ? `<span>🔗 ${linkUri(uri)}</span>` : `<span class="orphan-tag">${t('filter.no.url')}</span>`}
           </div>
         </div>
       </div>`;
@@ -4000,9 +4016,9 @@ function renderNoFolderView() {
       <span class="section-title">
         <label class="select-all-label">
           <input type="checkbox" id="nofolder-select-all-cb" ${allSelected ? 'checked' : ''} />
-          全选
+          ${t('select.all')}
         </label>
-        无文件夹条目 · ${filteredItems.length} 条
+        ${t('nofolder.title')} · ${filteredItems.length} ${t('nofolder.count')}
       </span>
     </div>
     <div class="all-items-body" style="position:relative">
@@ -4257,7 +4273,7 @@ function updateTrashBatchBar() {
   if (!bar) return;
   if (selectedItems.size > 0) {
     bar.style.display = 'flex';
-    $('#trash-batch-count').textContent = `☑ 已选 ${selectedItems.size} 项`;
+    $('#trash-batch-count').textContent = t('trash.selected.count', selectedItems.size);
   } else {
     bar.style.display = 'none';
   }
@@ -4281,8 +4297,8 @@ function setupTrashBatchButtons() {
   $('#trash-perm-delete-btn')?.addEventListener('click', () => {
     if (selectedItems.size === 0) return;
     showConfirm(
-      '⛔ 永久删除',
-      `确定要永久删除 ${selectedItems.size} 个条目吗？\n\n⚠️ 此操作不可逆，数据将无法恢复！`,
+      t('trash.perma.confirm.title'),
+      t('trash.perma.confirm.msg', selectedItems.size),
       async () => {
         try {
           const ids = Array.from(selectedItems);
@@ -4293,12 +4309,12 @@ function setupTrashBatchButtons() {
           }
 
           // Only update UI after API success
-          showToast(`✅ 已永久删除 ${ids.length} 个条目`, 'success');
+          showToast(t('trash.perma.ok.count', ids.length), 'success');
           selectedItems.clear();
           updateTrashBatchBar();
           await resyncVault();
         } catch (err) {
-          showToast(`❌ 永久删除失败: ${err.message}`, 'error');
+          showToast(`${t('trash.perma.fail')}: ${err.message}`, 'error');
           resyncVault();
         }
       }
@@ -4312,7 +4328,7 @@ function showTrashRestoreModal() {
 
   list.innerHTML = `
     <button class="move-folder-option" data-folder-id="__none__">
-      <span>📂</span> <span>无文件夹（仅恢复）</span>
+      <span>📂</span> <span>${t('trash.restore.none')}</span>
     </button>
     ${folderList.map(f => `
       <button class="move-folder-option" data-folder-id="${f.id}">
@@ -4327,7 +4343,7 @@ function showTrashRestoreModal() {
     btn.addEventListener('click', async () => {
       const targetFolderId = btn.dataset.folderId;
       const realFolderId = targetFolderId === '__none__' ? null : targetFolderId;
-      const folderName = realFolderId ? folderMap[realFolderId] : '无文件夹';
+      const folderName = realFolderId ? folderMap[realFolderId] : t('item.no.folder');
 
       modal.style.display = 'none';
       try {
@@ -4352,7 +4368,7 @@ function showTrashRestoreModal() {
         renderFolderList();
         renderTrashView();
 
-        showToast(`✅ 已恢复 ${ids.length} 个条目到「${folderName}」`, 'success');
+        showToast(t('trash.restore.to', ids.length, folderName), 'success');
 
         // Server-side: restore first, then move to folder
         await client.restoreBulk(ids);
@@ -4361,7 +4377,7 @@ function showTrashRestoreModal() {
         }
         resyncVault();
       } catch (err) {
-        showToast(`❌ 恢复失败: ${err.message}`, 'error');
+        showToast(`${t('trash.restore.fail')}: ${err.message}`, 'error');
         resyncVault();
       }
     });
@@ -4433,7 +4449,7 @@ async function handleMerge(groups) {
       // Safety guard: skip sub-groups where passwords differ (ignore empty = passkey-only)
       const nonEmptyPasswords = new Set(sorted.map(i => i.decrypted?.password || '').filter(p => p !== ''));
       if (nonEmptyPasswords.size > 1) {
-        showToast(`⚠️ ${username || '—'} @ ${group.matchKey}：条目密码不同，请检查`, 'warning');
+        showToast(`⚠️ ${username || '—'} @ ${group.matchKey}: ${t('merge.same.site.password.diff')}`, 'warning');
         continue;
       }
 
@@ -4457,14 +4473,14 @@ async function handleMerge(groups) {
           decryptedPkIds.push(ids.sort().join('|'));
         }
         if (new Set(decryptedPkIds).size > 1) {
-          showToast(`🔑 ${username || '—'} @ ${group.matchKey}：通行密钥不同，请检查`, 'warning');
+          showToast(`🔑 ${username || '—'} @ ${group.matchKey}: ${t('merge.same.site.passkey.diff')}`, 'warning');
           continue;
         }
       }
 
       siteMergeGroups.push({
         type: 'same_site',
-        label: `同站合并: ${username || '—'} @ ${group.matchKey}`,
+        label: `${t('merge.same.site.label')}: ${username || '—'} @ ${group.matchKey}`,
         items: sorted,
         keepItem: sorted[0],
         pureDelete: false,
@@ -4475,7 +4491,7 @@ async function handleMerge(groups) {
 
   // Notify if same-site items were selected but couldn't be grouped for merge
   if (siteCheckedMap.size > 0 && siteMergeGroups.length === 0) {
-    showToast('⛔ 同站条目的用户名各不相同，无法合并', 'warning');
+    showToast(`⛔ ${t('merge.same.site.username.diff')}`, 'warning');
   }
 
   const allGroups = [...exactSelectedGroups, ...siteMergeGroups];
@@ -4489,21 +4505,21 @@ async function handleMerge(groups) {
   const mergeCount = allGroups.filter(g => g.needsMerge).length;
   const deleteCount = allGroups.reduce((sum, g) => sum + g.items.length - 1, 0);
 
-  let confirmMsg = `确认处理 ${allGroups.length} 组？\n`;
-  if (exactSelectedGroups.length > 0) confirmMsg += `• 完全重复 ${exactSelectedGroups.length} 组\n`;
-  if (siteMergeGroups.length > 0) confirmMsg += `• 同站智能合并 ${siteMergeGroups.length} 组（按用户名自动分组）\n`;
-  if (pureDeleteCount > 0) confirmMsg += `• 其中 ${pureDeleteCount} 组 100% 相同 → 直接删除\n`;
-  if (mergeCount > 0) confirmMsg += `• 其中 ${mergeCount} 组有差异 → 合并后删除\n`;
-  confirmMsg += `共删除 ${deleteCount} 个重复条目（移入回收站，30天内可恢复）`;
+  let confirmMsg = `${t('merge.confirm.process', allGroups.length)}\n`;
+  if (exactSelectedGroups.length > 0) confirmMsg += `${t('merge.confirm.exact', exactSelectedGroups.length)}\n`;
+  if (siteMergeGroups.length > 0) confirmMsg += `${t('merge.confirm.same.site', siteMergeGroups.length)}\n`;
+  if (pureDeleteCount > 0) confirmMsg += `${t('merge.confirm.pure.delete', pureDeleteCount)}\n`;
+  if (mergeCount > 0) confirmMsg += `${t('merge.confirm.needs.merge', mergeCount)}\n`;
+  confirmMsg += t('merge.confirm.delete.count', deleteCount);
 
   showConfirm(
-    '智能合并',
+    t('merge.confirm.smart.title'),
     confirmMsg,
     async () => {
       const mergeBtn = $('#merge-btn');
       isMergeLocked = true;
       mergeBtn.disabled = true;
-      mergeBtn.textContent = '合并中...';
+      mergeBtn.textContent = t('merge.merging');
       updateMergeLockUI(true);
 
       // Show progress overlay
@@ -4532,7 +4548,7 @@ async function handleMerge(groups) {
           const op = operations.toCreate[idx];
           completedSteps++;
           const pct = Math.round((completedSteps / totalSteps) * 100);
-          const label = op.isPasskeyMerge ? '通行密钥合并' : '新建合并条目';
+          const label = op.isPasskeyMerge ? t('merge.passkey.label') : t('merge.create.label');
           updateMergeProgress(pct, `${label} ${idx + 1}/${operations.toCreate.length}...`);
 
           try {
@@ -4543,7 +4559,7 @@ async function handleMerge(groups) {
             console.log(`[Merge] ${op.isPasskeyMerge ? 'Passkey' : 'Path B'} createCipher:`, op.groupLabel);
             const result = await client.createCipher(payload);
             const newId = result.id || result.Id;
-            if (!newId) throw new Error('创建成功但未返回ID');
+            if (!newId) throw new Error(t('merge.create.no.id'));
             createdIds.push(newId);
             successGroups++;
           } catch (err) {
@@ -4551,7 +4567,7 @@ async function handleMerge(groups) {
             failedCreateGroupLabels.add(op.groupLabel);
             failures.push({
               label: op.groupLabel,
-              reason: `${op.isPasskeyMerge ? '通行密钥' : ''}合并条目创建失败: ${err.message}`,
+              reason: `${op.isPasskeyMerge ? `${t('merge.passkey.label')} ` : ''}${t('merge.create.fail')}: ${err.message}`,
             });
           }
         }
@@ -4570,7 +4586,7 @@ async function handleMerge(groups) {
           safeToDelete = safeToDelete.filter(id => !failedGroupItems.has(id));
         }
         if (safeToDelete.length > 0) {
-          updateMergeProgress(95, `清理 ${safeToDelete.length} 个重复条目...`);
+          updateMergeProgress(95, t('merge.cleanup', safeToDelete.length));
           try {
             for (let i = 0; i < safeToDelete.length; i += 100) {
               await client.softDeleteBulk(safeToDelete.slice(i, i + 100));
@@ -4578,7 +4594,7 @@ async function handleMerge(groups) {
             successDeletes = safeToDelete.length;
           } catch (err) {
             console.error('[Merge] softDeleteBulk failed:', err);
-            failures.push({ label: '批量删除', reason: `删除失败: ${err.message}` });
+            failures.push({ label: t('merge.batch.delete'), reason: `${t('merge.delete.fail')}: ${err.message}` });
           }
         }
 
@@ -4586,20 +4602,20 @@ async function handleMerge(groups) {
         const pureDeleteGroups = allGroups.filter(g => g.pureDelete);
         successGroups += pureDeleteGroups.length;
 
-        updateMergeProgress(100, '完成！');
+        updateMergeProgress(100, t('merge.done'));
         hideMergeProgress();
 
         // Show report
         showMergeReport(successGroups, successDeletes, failures);
 
-        mergeBtn.textContent = '✅ 完成';
+        mergeBtn.textContent = t('dup.merge.single.done');
         mergeBtn.className = 'merge-btn success';
         setTimeout(() => resyncVault(), 1500);
       } catch (err) {
         console.error('Merge error:', err);
         hideMergeProgress();
-        showToast(`❌ 合并失败: ${err.message}`, 'error');
-        mergeBtn.textContent = '🔀 一键合并';
+        showToast(`${t('merge.fail')}: ${err.message}`, 'error');
+        mergeBtn.textContent = t('dup.merge.btn');
         mergeBtn.className = 'merge-btn';
       } finally {
         mergeBtn.disabled = false;
@@ -4638,7 +4654,7 @@ async function buildCipherCreatePayload(op, isDemoMode, symKey) {
     type: op.type ?? 1,
     organizationId: null,
     folderId: op.folderId || null,
-    name: await enc(op.name || '(无标题)'),
+    name: await enc(op.name || t('item.untitled')),
     notes: await enc(op.notes),
     favorite: op.favorite || false,
     reprompt: op.reprompt ?? 0,
@@ -4847,7 +4863,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
       mergeItems = group.items.filter(i => checkedIds.has(i.id));
     }
     if (mergeItems.length < 2) {
-      showToast('⛔ 请至少勾选 2 个条目', 'warning');
+      showToast(t('merge.single.need.two'), 'warning');
       return;
     }
   }
@@ -4856,13 +4872,13 @@ async function handleSingleMerge(groups, gi, btnEl) {
   if (group.type === 'same_site') {
     const usernames = new Set(mergeItems.map(i => (i.decrypted?.username || '').toLowerCase()));
     if (usernames.size > 1) {
-      showToast('⛔ 不同用户名的条目无法合并，以防止凭据丢失', 'warning');
+      showToast(t('merge.single.username.diff'), 'warning');
       return;
     }
     // Same username but different passwords → warn and block (ignore empty = passkey-only)
     const nonEmptyPasswords = new Set(mergeItems.map(i => i.decrypted?.password || '').filter(p => p !== ''));
     if (nonEmptyPasswords.size > 1) {
-      showToast('⚠️ 条目密码不同，请检查', 'warning');
+      showToast(`⚠️ ${t('merge.same.site.password.diff')}`, 'warning');
       return;
     }
   }
@@ -4887,7 +4903,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
       decryptedPasskeyIds.push(ids.sort().join('|'));
     }
     if (new Set(decryptedPasskeyIds).size > 1) {
-      showToast('🔑 通行密钥不同，请检查', 'warning');
+      showToast(`🔑 ${t('merge.same.site.passkey.diff')}`, 'warning');
       return;
     }
   }
@@ -4944,12 +4960,12 @@ async function handleSingleMerge(groups, gi, btnEl) {
         console.log(`[SingleMerge] ${op.isPasskeyMerge ? 'Passkey' : 'Path B'} createCipher:`, op.groupLabel);
         const result = await client.createCipher(payload);
         const newId = result.id || result.Id;
-        if (!newId) throw new Error('创建成功但未返回ID');
+        if (!newId) throw new Error(t('merge.create.no.id'));
         console.log('[SingleMerge] createCipher SUCCESS, new id:', newId);
       } catch (err) {
         console.error('[SingleMerge] createCipher failed:', err);
         createSuccess = false;
-        showToast(`❌ ${op.isPasskeyMerge ? '通行密钥' : ''}合并条目创建失败: ${err.message}`, 'error');
+        showToast(`❌ ${op.isPasskeyMerge ? `${t('merge.passkey.label')} ` : ''}${t('merge.create.fail')}: ${err.message}`, 'error');
       }
     }
 
@@ -4958,7 +4974,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
     if (!createSuccess && (operations.toCreate?.length || 0) > 0) {
       // Create failed — do NOT delete originals
       safeToDelete = [];
-      showToast('⛔ 新建失败，原条目未删除', 'error');
+      showToast(t('merge.single.create.failed.keep'), 'error');
     }
     if (safeToDelete.length > 0) {
       for (let i = 0; i < safeToDelete.length; i += 100) {
@@ -4977,9 +4993,9 @@ async function handleSingleMerge(groups, gi, btnEl) {
     switchView(currentView);
 
     if (createSuccess) {
-      showToast(`✅ ${escHtml(group.label)} 合并完成`, 'success');
+      showToast(`✅ ${escHtml(group.label)} ${t('merge.ok')}`, 'success');
     } else {
-      showToast(`⚠️ ${escHtml(group.label)} 合并失败`, 'warning');
+      showToast(`⚠️ ${escHtml(group.label)} ${t('merge.fail')}`, 'warning');
     }
 
     // Background resync for real mode consistency
@@ -4988,7 +5004,7 @@ async function handleSingleMerge(groups, gi, btnEl) {
     }
   } catch (err) {
     console.error('[SingleMerge] error:', err);
-    showToast(`❌ 合并失败: ${err.message}`, 'error');
+    showToast(`${t('merge.fail')}: ${err.message}`, 'error');
     btnEl.textContent = t('dup.merge.single');
     btnEl.classList.remove('merging');
   } finally {
@@ -5121,7 +5137,7 @@ function setupCredFileImport() {
 }
 
 async function handleCredFile(file) {
-  setLoginState('loading', '正在解密凭证文件...');
+  setLoginState('loading', t('credfile.login.decrypting'));
 
   try {
     const buffer = await file.arrayBuffer();
@@ -5141,13 +5157,13 @@ async function handleCredFile(file) {
     $$('.auth-panel').forEach(p => p.classList.remove('active'));
     $('#auth-apikey').classList.add('active');
 
-    setLoginState('loading', '凭证已解密，正在自动登录...');
+    setLoginState('loading', t('credfile.login.autologin'));
 
     // Auto-login
     await handleApiKeyLogin();
   } catch (err) {
     console.error('Credential file decrypt error:', err);
-    setLoginState('error', '解密失败：文件损坏或不是有效的加密凭证文件');
+    setLoginState('error', t('credfile.login.invalid'));
   }
 }
 
@@ -5156,18 +5172,17 @@ function renderCredFileView() {
   container.innerHTML = `
     <div class="credfile-view">
       <div class="section-header">
-        <span class="section-title">🔐 生成加密登录文件</span>
+        <span class="section-title">${t('credfile.view.title')}</span>
       </div>
       <p class="credfile-desc">
-        输入你的登录信息，点击「生成加密文件」将下载一个 AES-256 加密的 <code>.bwcred</code> 文件。<br/>
-        下次登录时，在登录页选择「🔐 加密文件」模式，拖拽文件即可自动登录。
+        ${t('credfile.view.desc')}
       </p>
       <div class="credfile-form">
         <div class="form-group">
-          <label>服务器</label>
+          <label>${t('login.server')}</label>
           <select id="cred-server">
-            <option value="">bitwarden.com（官方）</option>
-            <option value="https://vault.bitwarden.eu">bitwarden.eu（欧洲）</option>
+            <option value="">${t('login.server.official')}</option>
+            <option value="https://vault.bitwarden.eu">${t('login.server.eu')}</option>
           </select>
         </div>
         <div class="form-group">
@@ -5179,17 +5194,17 @@ function renderCredFileView() {
           <input type="password" id="cred-client-secret" placeholder="API secret" />
         </div>
         <div class="form-group">
-          <label>邮箱</label>
-          <input type="email" id="cred-email" placeholder="你的 Bitwarden 邮箱" />
+          <label>${t('detail.id.email')}</label>
+          <input type="email" id="cred-email" placeholder="${t('login.email.placeholder')}" />
         </div>
         <div class="form-group">
-          <label>主密码</label>
-          <input type="password" id="cred-password" placeholder="你的主密码" />
+          <label>${t('login.password.label')}</label>
+          <input type="password" id="cred-password" placeholder="${t('login.password.placeholder')}" />
         </div>
-        <button type="button" class="btn-primary" id="generate-credfile-btn">🔐 生成加密文件并下载</button>
+        <button type="button" class="btn-primary" id="generate-credfile-btn">${t('credfile.generate.full')}</button>
       </div>
       <div class="credfile-security">
-        <p>⚠️ 加密文件包含你的完整登录凭证，请妥善保管。仅本网站可解密。</p>
+        <p>${t('credfile.view.security')}</p>
       </div>
     </div>
   `;
@@ -5219,7 +5234,7 @@ function renderCredFileView() {
     };
 
     if (!data.clientId || !data.clientSecret || !data.email || !data.password) {
-      showToast('❌ 请填写所有字段', 'error');
+      showToast(t('status.fill.all'), 'error');
       return;
     }
 
@@ -5227,10 +5242,10 @@ function renderCredFileView() {
       const encrypted = await encryptCredentials(data);
       const blob = new Blob([encrypted], { type: 'text/plain;charset=utf-8' });
       saveAs(blob, `vault-manager-${new Date().toISOString().slice(0, 10)}.bwcred`);
-      showToast('✅ 加密凭证文件已下载', 'success');
+      showToast(t('credfile.ok'), 'success');
     } catch (err) {
       console.error('Encrypt error:', err);
-      showToast(`❌ 加密失败: ${err.message}`, 'error');
+      showToast(`${t('credfile.encrypt.fail')}: ${err.message}`, 'error');
     }
   });
 }

@@ -62,7 +62,7 @@ export function analyzeHealth(ciphers) {
 
   // 8. Decrypt failed
   const decryptFailed = ciphers.filter(c => !!c.decrypted?.error);
-  if (decryptFailed.length) issues.push({ id: 'decrypt-fail', severity: 'high', label: '解密失败', count: decryptFailed.length, items: decryptFailed });
+  if (decryptFailed.length) issues.push({ id: 'decrypt-fail', severity: 'high', label: t('health.decrypt.fail'), count: decryptFailed.length, items: decryptFailed });
 
   // Calculate score (100 = perfect)
   const highCount = issues.filter(i => i.severity === 'high').reduce((s, i) => s + i.count, 0);
