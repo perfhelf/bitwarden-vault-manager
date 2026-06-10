@@ -3365,7 +3365,7 @@ const ALIVE_DOMAIN_WHITELIST = new Set([
   'wise.com','revolut.com','coinbase.com','binance.com','www.binance.com',
   'kraken.com','blockchain.com',
   // Cloud / DevOps
-  'vercel.com','netlify.com','app.netlify.com','heroku.com','dashboard.heroku.com',
+  'netlify.com','app.netlify.com','heroku.com','dashboard.heroku.com',
   'digitalocean.com','cloud.digitalocean.com','linode.com','vultr.com',
   'cloudflare.com','dash.cloudflare.com','workers.dev',
   'supabase.com','app.supabase.com','railway.app','render.com','fly.io',
@@ -3374,7 +3374,7 @@ const ALIVE_DOMAIN_WHITELIST = new Set([
   'pypi.org','hub.docker.com','figma.com','www.figma.com','notion.so','www.notion.so',
   'slack.com','app.slack.com','discord.com','discord.gg','trello.com',
   'atlassian.com','jira.atlassian.com','confluence.atlassian.com',
-  'codepen.io','replit.com','codesandbox.io','vercel.app',
+  'codepen.io','replit.com','codesandbox.io',
   // China majors
   'baidu.com','www.baidu.com','pan.baidu.com','tieba.baidu.com',
   'taobao.com','www.taobao.com','tmall.com','www.tmall.com',

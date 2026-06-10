@@ -30,7 +30,6 @@ const SITES = [
   { name: 'Stack Overflow', url: 'https://stackoverflow.com', folder: 'folder-dev' },
   { name: 'NPM', url: 'https://npmjs.com', folder: 'folder-dev' },
   { name: 'Docker Hub', url: 'https://hub.docker.com', folder: 'folder-dev' },
-  { name: 'Vercel', url: 'https://vercel.com', folder: 'folder-dev' },
   { name: 'Netlify', url: 'https://netlify.com', folder: 'folder-dev' },
   { name: 'Cloudflare', url: 'https://dash.cloudflare.com', folder: 'folder-dev' },
   { name: 'AWS Console', url: 'https://console.aws.amazon.com', folder: 'folder-cloud' },
@@ -306,7 +305,6 @@ export function generateDemoData(locale = 'zh') {
     { name: 'Hugging Face', url: 'https://huggingface.co' },
     { name: 'Kaggle', url: 'https://kaggle.com' },
     { name: 'Weights & Biases', url: 'https://wandb.ai' },
-    { name: 'Vercel Analytics', url: 'https://vercel.com/analytics' },
     { name: 'Plausible', url: 'https://plausible.io' },
     { name: 'Umami', url: 'https://umami.is' },
     { name: 'Upstash', url: 'https://upstash.com' },
@@ -337,7 +335,6 @@ export function generateDemoData(locale = 'zh') {
     { zh: '又拍云', en: 'Upyun CDN', url: 'https://upyun.com' },
     { name: 'Cloudflare Workers', url: 'https://workers.cloudflare.com' },
     { name: 'Cloudflare Pages', url: 'https://pages.cloudflare.com' },
-    { name: 'Vercel Edge', url: 'https://vercel.com/edge' },
     { name: 'Fly Machines', url: 'https://fly.io/machines' },
     { name: 'Deno KV', url: 'https://deno.com/kv' },
   ];
