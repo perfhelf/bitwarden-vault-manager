@@ -14,23 +14,71 @@ const SERVERS = {
     apiUrl: '/bw-api',
     identityUrl: '/bw-identity',
   },
+  'https://vault.bitwarden.com': {
+    apiUrl: '/bw-api',
+    identityUrl: '/bw-identity',
+  },
   'https://vault.bitwarden.eu': {
     apiUrl: '/bw-eu-api',
     identityUrl: '/bw-eu-identity',
   },
 };
 
+const SELF_HOST_PROXY_PREFIX = '/bw-selfhost';
+
+export function normalizeServerUrl(serverUrl = '') {
+  const raw = String(serverUrl || '').trim().replace(/：/g, ':').replace(/／/g, '/');
+  if (!raw) return '';
+
+  let normalized = raw;
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(raw) && !/^https?:\/\//i.test(raw)) {
+    throw new Error('Bitwarden server URL must start with http:// or https://');
+  }
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+
+  let url;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error('Invalid Bitwarden server URL');
+  }
+
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('Bitwarden server URL must start with http:// or https://');
+  }
+
+  url.hash = '';
+  url.search = '';
+  url.username = '';
+  url.password = '';
+  url.pathname = url.pathname
+    .replace(/\/+$/g, '')
+    .replace(/\/(api|identity)$/i, '');
+
+  return url.toString().replace(/\/+$/g, '');
+}
+
+function getServerConfig(serverUrl = '') {
+  const normalized = normalizeServerUrl(serverUrl);
+  if (!normalized) return SERVERS[''];
+  return SERVERS[normalized] || null;
+}
+
 export class BitwardenClient {
   constructor(serverUrl = '') {
-    const config = SERVERS[serverUrl];
+    const normalizedServerUrl = normalizeServerUrl(serverUrl);
+    const config = getServerConfig(normalizedServerUrl);
     if (config) {
       this.apiUrl = config.apiUrl;
       this.identityUrl = config.identityUrl;
     } else {
-      const base = serverUrl.replace(/\/+$/, '');
-      this.apiUrl = `${base}/api`;
-      this.identityUrl = `${base}/identity`;
+      const proxyBase = `${SELF_HOST_PROXY_PREFIX}/${encodeURIComponent(normalizedServerUrl)}`;
+      this.apiUrl = `${proxyBase}/api`;
+      this.identityUrl = `${proxyBase}/identity`;
     }
+    this.serverUrl = normalizedServerUrl;
     this.accessToken = null;
     this.refreshToken = null;
     this.clientVersion = '2025.1.0';

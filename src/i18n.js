@@ -12,6 +12,9 @@ const translations = {
   'login.server': { zh: '服务器', en: 'Server' },
   'login.server.official': { zh: 'bitwarden.com（官方）', en: 'bitwarden.com (Official)' },
   'login.server.eu': { zh: 'bitwarden.eu（欧洲）', en: 'bitwarden.eu (Europe)' },
+  'login.server.selfhost': { zh: '自托管 / Vaultwarden', en: 'Self-hosted / Vaultwarden' },
+  'login.server.selfhost.placeholder': { zh: 'https://vault.example.com', en: 'https://vault.example.com' },
+  'login.server.selfhost.hint': { zh: '填写 Web Vault 地址，不要包含 /api 或 /identity。', en: 'Enter the Web Vault URL without /api or /identity.' },
   'login.tab.apikey': { zh: '🔑 API Key（推荐）', en: '🔑 API Key (Recommended)' },
   'login.tab.credfile': { zh: '🔐 加密文件', en: '🔐 Encrypted File' },
   'login.apikey.info': { zh: '💡 在 <a href="https://vault.bitwarden.com" target="_blank" rel="noopener">Bitwarden 网页版</a> → <strong>设置</strong> → <strong>安全</strong> → <strong>密钥</strong> → 查看 API 密钥', en: '💡 Go to <a href="https://vault.bitwarden.com" target="_blank" rel="noopener">Bitwarden Web</a> → <strong>Settings</strong> → <strong>Security</strong> → <strong>Keys</strong> → View API Key' },
@@ -41,6 +44,8 @@ const translations = {
   'status.decrypt.analyze': { zh: '解密并分析条目...', en: 'Decrypting & analyzing...' },
   'status.fill.all': { zh: '请填写所有字段', en: 'Please fill in all fields' },
   'status.login.fail': { zh: 'API Key 登录失败', en: 'API Key login failed' },
+  'status.server.url.required': { zh: '请填写自托管服务器地址', en: 'Please enter the self-hosted server URL' },
+  'status.server.url.invalid': { zh: '自托管服务器地址无效，请使用 https://vault.example.com 格式', en: 'Invalid self-hosted server URL. Use a format like https://vault.example.com' },
 
   // === Sidebar ===
   'nav.overview': { zh: '总览', en: 'Overview' },

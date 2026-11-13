@@ -73,6 +73,29 @@ npm install
 npm run dev
 ```
 
+### 自托管 / Vaultwarden
+
+登录页「服务器」选择「自托管 / Vaultwarden」，填写 Web Vault 根地址，例如：
+
+```text
+https://vault.example.com
+```
+
+不要填写 `/api` 或 `/identity`，应用会自动转发到对应接口。
+
+- 本地开发模式会通过 Vite 代理转发自托管请求，可用于内网或本机可访问的 Vaultwarden/Bitwarden 服务。
+- Cloudflare Pages 默认关闭自托管转发。管理员在 Pages 环境变量 `SELF_HOSTED_BASES` 中填写允许的完整 HTTPS 根地址（包含端口和部署子路径；多个地址用英文逗号分隔），然后重新部署。例如：`https://vault.example.com/vault`。仅配置你控制且信任的域名。官方 US/EU 服务无需此配置。
+- 开发和预览代理支持本机和内网地址；请只在可信网络运行。使用内部 CA 时通过 `NODE_EXTRA_CA_CERTS` 配置信任的 CA。
+
+### 回归测试
+
+```bash
+npm test
+npm run build
+```
+
+测试使用合成凭证及模拟请求，不连接真实密码库。
+
 ### 部署到 Cloudflare Pages
 
 ```bash

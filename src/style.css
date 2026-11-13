@@ -309,6 +309,17 @@ body {
 
 .form-group input::placeholder { color: var(--text-muted); }
 
+.selfhost-url-input {
+  margin-top: 10px;
+}
+
+.field-hint {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .btn-primary {
   width: 100%;
   padding: 14px;

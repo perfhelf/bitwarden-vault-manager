@@ -1,4 +1,4 @@
-import { BitwardenClient } from './bitwarden-api.js';
+import { BitwardenClient, normalizeServerUrl } from './bitwarden-api.js';
 import { makeMasterKey, stretchKey, decryptSymmetricKey, decryptToString, encryptString } from './crypto.js';
 import { analyzeCiphers, buildMergeOperations } from './dedup-engine.js';
 import { searchAndFilter, QUICK_FILTERS, getFilterCounts, SORT_OPTIONS } from './search-engine.js';
@@ -35,6 +35,7 @@ let deadUrlCheckProgress = { checked: 0, total: 0 }; // Progress tracking
 // --- DOM ---
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+const SELF_HOST_OPTION_VALUE = 'selfhost';
 
 const TYPE_META = {
   1: { view: 'type-login', icon: '🔐', key: 'type.login' },
@@ -63,6 +64,69 @@ function typeTitle(typeId) {
 
 function renderCurrentView() {
   switchView(currentView);
+}
+
+function getSelectedServerUrl(selectId = 'server-url', inputId = 'selfhost-url', options = {}) {
+  const choice = $(`#${selectId}`)?.value || '';
+  if (choice !== SELF_HOST_OPTION_VALUE) return choice;
+
+  const raw = $(`#${inputId}`)?.value.trim() || '';
+  if (!raw) {
+    if (options.allowBlank) return '';
+    throw new Error(t('status.server.url.required'));
+  }
+
+  try {
+    return normalizeServerUrl(raw);
+  } catch {
+    throw new Error(t('status.server.url.invalid'));
+  }
+}
+
+function setServerSelection(serverUrl = '', selectId = 'server-url', inputId = 'selfhost-url') {
+  const select = $(`#${selectId}`);
+  const input = $(`#${inputId}`);
+  if (!select || !input) return;
+
+  let value = String(serverUrl || '').trim();
+  if (value) {
+    try {
+      value = normalizeServerUrl(value);
+    } catch {
+      value = value.replace(/\/+$/g, '');
+    }
+  }
+
+  if (!value || value === 'https://vault.bitwarden.com') {
+    select.value = '';
+    input.value = '';
+  } else if (value === 'https://vault.bitwarden.eu') {
+    select.value = 'https://vault.bitwarden.eu';
+    input.value = '';
+  } else {
+    select.value = SELF_HOST_OPTION_VALUE;
+    input.value = value;
+  }
+
+  updateSelfHostField(selectId, inputId);
+}
+
+function updateSelfHostField(selectId = 'server-url', inputId = 'selfhost-url') {
+  const select = $(`#${selectId}`);
+  const input = $(`#${inputId}`);
+  if (!select || !input) return;
+
+  const isSelfHosted = select.value === SELF_HOST_OPTION_VALUE;
+  input.hidden = !isSelfHosted;
+  input.disabled = !isSelfHosted;
+  input.setAttribute('aria-required', isSelfHosted ? 'true' : 'false');
+}
+
+function setupServerSelector(selectId = 'server-url', inputId = 'selfhost-url') {
+  const select = $(`#${selectId}`);
+  if (!select) return;
+  select.addEventListener('change', () => updateSelfHostField(selectId, inputId));
+  updateSelfHostField(selectId, inputId);
 }
 
 // ========================
@@ -169,6 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateControlButtons();
 
   setupAuthModeTabs();
+  setupServerSelector();
   setupLoginForm();
   setupCredFileImport();
   setupKeyboardShortcuts();
@@ -288,10 +353,17 @@ async function handleApiKeyLogin() {
   const clientSecret = $('#client-secret').value.trim();
   const email = $('#api-email').value.trim();
   const password = $('#api-password').value;
-  const serverUrl = $('#server-url').value;
+  let serverUrl = '';
 
   if (!clientId || !clientSecret || !email || !password) {
     setLoginState('error', t('status.fill.all'));
+    return;
+  }
+
+  try {
+    serverUrl = getSelectedServerUrl();
+  } catch (err) {
+    setLoginState('error', err.message);
     return;
   }
 
@@ -603,8 +675,10 @@ function matchesSearch(item) {
 
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
+    const editing = e.target instanceof Element &&
+      (e.target.closest('input, textarea, select') || e.target.isContentEditable);
     // "/" to focus search
-    if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !editing && $('#dashboard-view')?.style.display === 'block') {
       const search = $('#global-search');
       if (search && document.activeElement !== search) {
         e.preventDefault();
@@ -5148,7 +5222,7 @@ async function handleCredFile(file) {
     if (creds.clientSecret) $('#client-secret').value = creds.clientSecret;
     if (creds.email) $('#api-email').value = creds.email;
     if (creds.password) $('#api-password').value = creds.password;
-    if (creds.serverUrl) $('#server-url').value = creds.serverUrl;
+    setServerSelection(creds.serverUrl || '');
 
     // Switch to API Key mode visually
     currentAuthMode = 'apikey';
@@ -5183,7 +5257,10 @@ function renderCredFileView() {
           <select id="cred-server">
             <option value="">${t('login.server.official')}</option>
             <option value="https://vault.bitwarden.eu">${t('login.server.eu')}</option>
+            <option value="${SELF_HOST_OPTION_VALUE}">${t('login.server.selfhost')}</option>
           </select>
+          <input type="text" inputmode="url" spellcheck="false" id="cred-selfhost-url" class="selfhost-url-input" placeholder="${t('login.server.selfhost.placeholder')}" autocomplete="off" hidden />
+          <p class="field-hint">${t('login.server.selfhost.hint')}</p>
         </div>
         <div class="form-group">
           <label>client_id</label>
@@ -5214,22 +5291,37 @@ function renderCredFileView() {
   const curSecret = $('#client-secret')?.value;
   const curEmail = $('#api-email')?.value;
   const curPassword = $('#api-password')?.value;
-  const curServer = $('#server-url')?.value;
+  let curServer = '';
+  try {
+    curServer = getSelectedServerUrl('server-url', 'selfhost-url', { allowBlank: true });
+  } catch {
+    curServer = $('#selfhost-url')?.value.trim() || $('#server-url')?.value || '';
+  }
+
+  setupServerSelector('cred-server', 'cred-selfhost-url');
 
   if (curClientId) $('#cred-client-id').value = curClientId;
   if (curSecret) $('#cred-client-secret').value = curSecret;
   if (curEmail) $('#cred-email').value = curEmail;
   if (curPassword) $('#cred-password').value = curPassword;
-  if (curServer) $('#cred-server').value = curServer;
+  setServerSelection(curServer, 'cred-server', 'cred-selfhost-url');
 
   // Generate button
   $('#generate-credfile-btn').addEventListener('click', async () => {
+    let serverUrl = '';
+    try {
+      serverUrl = getSelectedServerUrl('cred-server', 'cred-selfhost-url');
+    } catch (err) {
+      showToast(err.message, 'error');
+      return;
+    }
+
     const data = {
       clientId: $('#cred-client-id').value.trim(),
       clientSecret: $('#cred-client-secret').value.trim(),
       email: $('#cred-email').value.trim(),
       password: $('#cred-password').value,
-      serverUrl: $('#cred-server').value,
+      serverUrl,
       createdAt: new Date().toISOString()
     };
 
