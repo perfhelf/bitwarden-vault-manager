@@ -100,7 +100,10 @@
             <select id="server-url">
               <option value="" data-i18n="login.server.official">bitwarden.com（官方）</option>
               <option value="https://vault.bitwarden.eu" data-i18n="login.server.eu">bitwarden.eu（欧洲）</option>
+              <option value="selfhost" data-i18n="login.server.selfhost">自托管 / Vaultwarden</option>
             </select>
+            <input type="text" inputmode="url" spellcheck="false" id="selfhost-url" class="selfhost-url-input" data-i18n="login.server.selfhost.placeholder" placeholder="https://vault.example.com" autocomplete="off" hidden />
+            <p class="field-hint" data-i18n="login.server.selfhost.hint">填写 Web Vault 地址，不要包含 /api 或 /identity。</p>
           </div>
 
           <div class="auth-mode-toggle">

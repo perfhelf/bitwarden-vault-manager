@@ -22,11 +22,13 @@ export async function makeMasterKey(password, email, kdfConfig) {
   const saltBytes = new TextEncoder().encode(email.toLowerCase().trim());
 
   if (kdfConfig.kdf === KdfType.Argon2id) {
-    // Dynamic import for argon2-browser (only loaded if needed)
-    const argon2 = await import(/* @vite-ignore */ 'argon2-browser');
+    // Use the browser bundle, which embeds the WASM payload. Importing the
+    // package root makes Vite 8 try to parse Emscripten's argon2.wasm imports.
+    const argon2Module = await import('argon2-browser/dist/argon2-bundled.min.js');
+    const argon2 = argon2Module.default ?? argon2Module;
     const result = await argon2.hash({
       pass: passwordBytes,
-      salt: createArgon2Salt(saltBytes),
+      salt: await createArgon2Salt(saltBytes),
       time: kdfConfig.kdfIterations,
       mem: kdfConfig.kdfMemory * 1024, // MB to KB
       parallelism: kdfConfig.kdfParallelism,
